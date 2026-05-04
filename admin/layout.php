@@ -54,19 +54,20 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .collapse-btn:hover { background: rgba(255,255,255,0.2); }
         
         .nav-menu { list-style: none; padding: 20px 16px; }
-        .menu-item { display: flex; align-items: center; padding: 12px 16px; margin: 4px 0; border-radius: 12px; color: #cbd5e1; cursor: pointer; transition: all 0.3s; text-decoration: none; }
-        .menu-item i { width: 24px; font-size: 18px; margin-right: 12px; }
-        .menu-item span { font-size: 14px; font-weight: 500; }
+        .menu-item { display: flex; align-items: center; padding: 10px 14px; margin: 2px 0; border-radius: 10px; color: #cbd5e1; cursor: pointer; transition: all 0.3s; text-decoration: none; font-size: 14px; }
+        .menu-item i { width: 24px; font-size: 16px; margin-right: 12px; }
+        .menu-item span { font-size: 13px; font-weight: 500; }
         .menu-item:hover { background: rgba(255,255,255,0.1); color: white; }
         .menu-item.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
         
         .sidebar-footer { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 16px; border-top: 1px solid rgba(255,255,255,0.1); }
-        .profile-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; cursor: pointer; transition: all 0.3s; text-decoration: none; color: white; }
+        .profile-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; cursor: pointer; transition: all 0.3s; text-decoration: none; color: white; }
         .profile-item:hover { background: rgba(255,255,255,0.1); }
-        .profile-avatar { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
+        .profile-avatar { width: 36px; height: 36px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
         .profile-info { flex: 1; }
-        .profile-name { font-size: 14px; font-weight: 600; }
-        .profile-email { font-size: 11px; color: #94a3b8; }
+        .profile-name { font-size: 13px; font-weight: 600; }
+        .profile-email { font-size: 10px; color: #94a3b8; }
+        .logout-icon { color: #ef4444; }
         
         .main-content { margin-left: 280px; transition: all 0.3s ease; min-height: 100vh; }
         .main-content.expanded { margin-left: 80px; }
@@ -91,6 +92,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .badge-warning { background: #fed7aa; color: #ea580c; }
         .badge-danger { background: #fee2e2; color: #dc2626; }
         .badge-info { background: #dbeafe; color: #2563eb; }
+        .badge-primary { background: #e0e7ff; color: #4f46e5; }
         .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; border: none; cursor: pointer; text-decoration: none; display: inline-block; }
         .btn-primary { background: #667eea; color: white; }
         .btn-danger { background: #ef4444; color: white; }
@@ -110,31 +112,94 @@ $current_page = basename($_SERVER['PHP_SELF']);
             .sidebar.mobile-open .menu-item { justify-content: flex-start; }
             .sidebar.mobile-open .menu-item i { margin-right: 12px; }
             .main-content { margin-left: 0; }
-            .mobile-menu-btn { display: block; }
         }
     </style>
 </head>
 <body>
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <div class="logo"><span class="logo-icon">🏪</span><span class="logo-text">Brokerplace</span></div>
-            <button class="collapse-btn" id="collapseBtn"><i class="fas fa-chevron-left"></i></button>
+            <div class="logo">
+                <span class="logo-icon">🏪</span>
+                <span class="logo-text">Brokerplace</span>
+            </div>
+            <button class="collapse-btn" id="collapseBtn">
+                <i class="fas fa-chevron-left"></i>
+            </button>
         </div>
+        
         <ul class="nav-menu">
-            <a href="dashboard.php" class="menu-item <?php echo $current_page == 'dashboard.php' ? 'active' : ''; ?>"><i class="fas fa-tachometer-alt"></i><span class="menu-label">Dashboard</span></a>
-            <a href="users.php" class="menu-item <?php echo $current_page == 'users.php' ? 'active' : ''; ?>"><i class="fas fa-users"></i><span class="menu-label">Users</span></a>
-            <a href="companies.php" class="menu-item <?php echo $current_page == 'companies.php' ? 'active' : ''; ?>"><i class="fas fa-building"></i><span class="menu-label">Companies</span></a>
-            <a href="transactions.php" class="menu-item <?php echo $current_page == 'transactions.php' ? 'active' : ''; ?>"><i class="fas fa-exchange-alt"></i><span class="menu-label">Transactions</span></a>
-            <a href="approve_listings.php" class="menu-item <?php echo $current_page == 'approve_listings.php' ? 'active' : ''; ?>"><i class="fas fa-check-double"></i><span class="menu-label">Approve Listings</span></a>
-            <a href="disputes.php" class="menu-item <?php echo $current_page == 'disputes.php' ? 'active' : ''; ?>"><i class="fas fa-gavel"></i><span class="menu-label">Disputes</span></a>
-            <a href="withdrawals.php" class="menu-item <?php echo $current_page == 'withdrawals.php' ? 'active' : ''; ?>"><i class="fas fa-money-bill-wave"></i><span class="menu-label">Withdrawals</span></a>
-            <a href="settings.php" class="menu-item <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>"><i class="fas fa-cog"></i><span class="menu-label">Settings</span></a>
+            <!-- Main Section -->
+            <a href="dashboard.php" class="menu-item <?php echo $current_page == 'dashboard.php' ? 'active' : ''; ?>">
+                <i class="fas fa-tachometer-alt"></i>
+                <span class="menu-label">Dashboard</span>
+            </a>
+            <a href="users.php" class="menu-item <?php echo $current_page == 'users.php' ? 'active' : ''; ?>">
+                <i class="fas fa-users"></i>
+                <span class="menu-label">Users</span>
+            </a>
+            <a href="companies.php" class="menu-item <?php echo $current_page == 'companies.php' ? 'active' : ''; ?>">
+                <i class="fas fa-building"></i>
+                <span class="menu-label">Companies</span>
+            </a>
+            <a href="transactions.php" class="menu-item <?php echo $current_page == 'transactions.php' ? 'active' : ''; ?>">
+                <i class="fas fa-exchange-alt"></i>
+                <span class="menu-label">Transactions</span>
+            </a>
+            <a href="payments.php" class="menu-item <?php echo $current_page == 'payments.php' ? 'active' : ''; ?>">
+                <i class="fas fa-credit-card"></i>
+                <span class="menu-label">Payments</span>
+            </a>
+            
+            <!-- Management Section -->
+            <div style="padding: 8px 16px; margin-top: 8px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Management</div>
+            <a href="approve_listings.php" class="menu-item <?php echo $current_page == 'approve_listings.php' ? 'active' : ''; ?>">
+                <i class="fas fa-check-double"></i>
+                <span class="menu-label">Approve Listings</span>
+            </a>
+            <a href="disputes.php" class="menu-item <?php echo $current_page == 'disputes.php' ? 'active' : ''; ?>">
+                <i class="fas fa-gavel"></i>
+                <span class="menu-label">Disputes</span>
+            </a>
+            <a href="withdrawals.php" class="menu-item <?php echo $current_page == 'withdrawals.php' ? 'active' : ''; ?>">
+                <i class="fas fa-money-bill-wave"></i>
+                <span class="menu-label">Withdrawals</span>
+            </a>
+            <a href="tickets.php" class="menu-item <?php echo $current_page == 'tickets.php' ? 'active' : ''; ?>">
+                <i class="fas fa-ticket-alt"></i>
+                <span class="menu-label">Support Tickets</span>
+            </a>
+            <a href="messages.php" class="menu-item <?php echo $current_page == 'messages.php' ? 'active' : ''; ?>">
+                <i class="fas fa-envelope"></i>
+                <span class="menu-label">Messages</span>
+            </a>
+            
+            <!-- Analytics & Settings -->
+            <div style="padding: 8px 16px; margin-top: 8px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Insights</div>
+            <a href="analytics.php" class="menu-item <?php echo $current_page == 'analytics.php' ? 'active' : ''; ?>">
+                <i class="fas fa-chart-line"></i>
+                <span class="menu-label">Analytics</span>
+            </a>
+            <a href="settings.php" class="menu-item <?php echo $current_page == 'settings.php' ? 'active' : ''; ?>">
+                <i class="fas fa-cog"></i>
+                <span class="menu-label">Settings</span>
+            </a>
         </ul>
+        
         <div class="sidebar-footer">
-            <div class="profile-item"><div class="profile-avatar"><?php echo strtoupper(substr($admin_name, 0, 1)); ?></div><div class="profile-info"><div class="profile-name"><?php echo htmlspecialchars($admin_name); ?></div><div class="profile-email">Administrator</div></div></div>
-            <a href="logout.php" class="menu-item" style="margin-top: 8px;"><i class="fas fa-sign-out-alt logout-icon"></i><span class="menu-label">Logout</span></a>
+            <a href="profile.php" class="profile-item">
+                <div class="profile-avatar"><?php echo strtoupper(substr($admin_name, 0, 1)); ?></div>
+                <div class="profile-info">
+                    <div class="profile-name"><?php echo htmlspecialchars($admin_name); ?></div>
+                    <div class="profile-email">Administrator</div>
+                </div>
+            </a>
+            <a href="logout.php" class="menu-item" style="margin-top: 8px;">
+                <i class="fas fa-sign-out-alt logout-icon"></i>
+                <span class="menu-label">Logout</span>
+            </a>
         </div>
     </div>
+    
     <div class="main-content" id="mainContent">
         <div class="top-bar">
             <h1 class="page-title"><?php echo $page_title ?? 'Dashboard'; ?></h1>
@@ -147,24 +212,36 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <?php echo $content ?? ''; ?>
         </div>
     </div>
+    
     <script>
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const collapseBtn = document.getElementById('collapseBtn');
+        
         if (collapseBtn) {
             collapseBtn.addEventListener('click', () => {
                 sidebar.classList.toggle('collapsed');
                 mainContent.classList.toggle('expanded');
                 const icon = collapseBtn.querySelector('i');
-                if (sidebar.classList.contains('collapsed')) { icon.classList.remove('fa-chevron-left'); icon.classList.add('fa-chevron-right'); }
-                else { icon.classList.remove('fa-chevron-right'); icon.classList.add('fa-chevron-left'); }
+                if (sidebar.classList.contains('collapsed')) {
+                    icon.classList.remove('fa-chevron-left');
+                    icon.classList.add('fa-chevron-right');
+                } else {
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-left');
+                }
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
             });
         }
+        
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             sidebar.classList.add('collapsed');
             mainContent.classList.add('expanded');
-            if (collapseBtn) { const icon = collapseBtn.querySelector('i'); icon.classList.remove('fa-chevron-left'); icon.classList.add('fa-chevron-right'); }
+            if (collapseBtn) {
+                const icon = collapseBtn.querySelector('i');
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            }
         }
     </script>
 </body>
