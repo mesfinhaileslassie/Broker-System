@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Payment API</title>
+</head>
+<body>
+    <h1>Test Payment Confirmation</h1>
+    <button onclick="testConfirm()">Test Confirm Payment for Code 12345</button>
+    <pre id="result"></pre>
+    
+    <script>
+        function testConfirm() {
+            fetch('/broker_system/api/confirm_payment.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    payment_code: '12345',
+                    user_phone: '+251992116527',
+                    pin: '1234'
+                })
+            })
+            .then(response => response.text())
+            .then(text => {
+                document.getElementById('result').innerHTML = text;
+                console.log('Response:', text);
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 'Error: ' + error;
+            });
+        }
+    </script>
+</body>
+</html>

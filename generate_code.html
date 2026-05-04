@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Payment Code</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; text-align: center; background: #f5f6fa; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .code { font-size: 56px; font-weight: bold; letter-spacing: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; margin: 20px 0; border-radius: 12px; font-family: monospace; }
+        button { padding: 12px 30px; font-size: 16px; cursor: pointer; background: #28a745; color: white; border: none; border-radius: 8px; margin: 10px; }
+        button:hover { background: #218838; }
+        .info { color: #666; margin-top: 20px; font-size: 14px; }
+        .amount { font-size: 20px; font-weight: bold; color: #667eea; }
+        .status { margin-top: 20px; padding: 10px; border-radius: 8px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏪 Ethio Brokerplace</h1>
+        <h2>Generate Telebirr Payment Code</h2>
+        
+        <button onclick="generateCode()">🔑 Generate New Code</button>
+        
+        <div id="result"></div>
+        
+        <div class="info">
+            <p>After generating a code, open Telebirr app and enter the same code to complete payment.</p>
+            <p>Test PIN: <strong>1234</strong></p>
+        </div>
+    </div>
+    
+    <script>
+        function generateCode() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Generating code...</p>';
+            
+            fetch('/broker_system/api/generate_code_session.php', {
+                method: 'POST',
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="code">${data.payment_code}</div>
+                        <p class="amount">Amount: ${data.amount_display}</p>
+                        <div class="status success">✓ Code generated! Use this code in Telebirr app.</div>
+                        <p><strong>Instructions:</strong></p>
+                        <ol style="text-align: left;">
+                            <li>Open Telebirr app</li>
+                            <li>Go to Marketplace / Payments</li>
+                            <li>Enter code: <strong>${data.payment_code}</strong></li>
+                            <li>Enter PIN: <strong>1234</strong></li>
+                            <li>Complete payment</li>
+                        </ol>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="status error">❌ Error: ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            });
+        }
+    </script>
+</body>
+</html>

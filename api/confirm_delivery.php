@@ -1,0 +1,72 @@
+<?php
+// api/confirm_delivery.php - Buyer confirms delivery
+
+session_start();
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+
+require_once '../config/database.php';
+require_once '../includes/auth.php';
+
+$input = json_decode(file_get_contents('php://input'), true);
+$transaction_id = $input['transaction_id'] ?? 0;
+$user_id = $_SESSION['user_id'] ?? 0;
+
+if (!$transaction_id || !$user_id) {
+    echo json_encode(['success' => false, 'error' => 'Missing required fields']);
+    exit;
+}
+
+$conn = getDbConnection();
+
+// Get transaction
+$txn = $conn->query("
+    SELECT t.*, l.seller_id 
+    FROM transactions t
+    JOIN listings l ON t.listing_id = l.id
+    WHERE t.id = $transaction_id AND t.buyer_id = $user_id
+")->fetch_assoc();
+
+if (!$txn) {
+    echo json_encode(['success' => false, 'error' => 'Transaction not found']);
+    exit;
+}
+
+if ($txn['status'] != 'deposits_complete') {
+    echo json_encode(['success' => false, 'error' => 'Cannot confirm delivery at this stage']);
+    exit;
+}
+
+$conn->begin_transaction();
+
+try {
+    // Set buyer confirmation
+    $conn->query("UPDATE transactions SET buyer_confirmed = 1 WHERE id = $transaction_id");
+    
+    // Check if seller also confirmed
+    $check = $conn->query("SELECT buyer_confirmed, seller_confirmed FROM transactions WHERE id = $transaction_id")->fetch_assoc();
+    
+    if ($check['buyer_confirmed'] && $check['seller_confirmed']) {
+        // Both confirmed - release payment to seller
+        $release_amount = $txn['total_amount'] - $txn['commission_amount'];
+        
+        // Release from admin escrow to seller
+        $conn->query("UPDATE users SET balance = balance + $release_amount WHERE id = {$txn['seller_id']}");
+        $conn->query("UPDATE users SET admin_balance = admin_balance - $release_amount WHERE role = 'admin'");
+        $conn->query("UPDATE transactions SET status = 'completed', completed_at = NOW(), escrow_released = 1 WHERE id = $transaction_id");
+        
+        echo json_encode(['success' => true, 'message' => 'Both parties confirmed! Payment released to seller.']);
+    } else {
+        $conn->query("UPDATE transactions SET status = 'in_progress' WHERE id = $transaction_id");
+        echo json_encode(['success' => true, 'message' => 'Delivery confirmed. Waiting for seller confirmation.']);
+    }
+    
+    $conn->commit();
+    
+} catch (Exception $e) {
+    $conn->rollback();
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+}
+
+$conn->close();
+?>

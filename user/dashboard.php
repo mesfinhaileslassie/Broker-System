@@ -1,5 +1,5 @@
 <?php
-// user/dashboard.php - Complete User Dashboard
+// user/dashboard.php - Complete user dashboard
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -9,13 +9,6 @@ requireLogin();
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
-
-// Mark notifications as read if requested
-if (isset($_GET['mark_read'])) {
-    $conn->query("UPDATE notifications SET is_read = 1 WHERE user_id = $user_id");
-    header('Location: dashboard.php');
-    exit;
-}
 
 // Get user balance
 $user = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
@@ -42,6 +35,19 @@ $notifications = $conn->query("
     LIMIT 10
 ");
 
+// Get pending transactions needing legal confirmation
+$pending_legal = $conn->query("
+    SELECT t.id, l.title, t.total_amount,
+           CASE WHEN t.buyer_id = $user_id THEN 'buyer' ELSE 'seller' END as my_role,
+           t.buyer_legal_confirmed, t.seller_legal_confirmed
+    FROM transactions t
+    JOIN listings l ON t.listing_id = l.id
+    WHERE (t.buyer_id = $user_id OR t.seller_id = $user_id)
+    AND t.status = 'deposits_complete'
+    AND ((t.buyer_legal_confirmed = 0 AND t.buyer_id = $user_id) OR
+         (t.seller_legal_confirmed = 0 AND t.seller_id = $user_id))
+");
+
 // Get recent transactions
 $recentTransactions = $conn->query("
     SELECT t.*, 
@@ -54,7 +60,7 @@ $recentTransactions = $conn->query("
     JOIN users u2 ON t.seller_id = u2.id
     WHERE t.buyer_id = $user_id OR t.seller_id = $user_id
     ORDER BY t.created_at DESC
-    LIMIT 8
+    LIMIT 10
 ");
 
 // Get recent listings
@@ -65,11 +71,12 @@ $recentListings = $conn->query("
     LIMIT 6
 ");
 
-// Get pending payment listings (approved but not paid)
-$pendingPaymentListings = $conn->query("
-    SELECT * FROM listings 
-    WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending'
-");
+// Mark notifications as read
+if (isset($_GET['mark_read'])) {
+    $conn->query("UPDATE notifications SET is_read = 1 WHERE user_id = $user_id");
+    header('Location: dashboard.php');
+    exit;
+}
 
 $conn->close();
 ?>
@@ -85,7 +92,6 @@ $conn->close();
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #f5f6fa; }
         
-        /* Header */
         .header { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
         .header-content { max-width: 1400px; margin: 0 auto; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
         .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
@@ -96,66 +102,52 @@ $conn->close();
         .notification-badge { position: relative; }
         .badge-count { position: absolute; top: -8px; right: -12px; background: #dc3545; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; }
         
-        /* Container */
         .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
         
-        /* Welcome Banner */
         .welcome { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 32px; border-radius: 16px; margin-bottom: 24px; }
         .welcome h1 { font-size: 28px; margin-bottom: 8px; }
-        .welcome p { opacity: 0.9; }
         
-        /* Notification Section */
         .notifications-section { background: #e3f2fd; border-radius: 12px; padding: 16px; margin-bottom: 24px; }
         .notifications-section h4 { margin-bottom: 12px; color: #004085; }
         .notification-item { padding: 10px; border-bottom: 1px solid #cce5ff; }
-        .notification-item:last-child { border-bottom: none; }
         .notification-title { font-weight: 600; color: #004085; }
         .notification-message { font-size: 13px; color: #555; margin-top: 4px; }
         .notification-time { font-size: 11px; color: #888; margin-top: 4px; }
         
-        /* Stats Grid */
+        .alert { background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px; border-radius: 8px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .alert-warning { color: #856404; }
+        .alert a { background: #ffc107; color: #333; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; }
+        
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 32px; }
-        .stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); transition: transform 0.3s; text-align: center; }
+        .stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center; transition: transform 0.3s; }
         .stat-card:hover { transform: translateY(-4px); }
         .stat-icon { font-size: 32px; margin-bottom: 12px; }
         .stat-value { font-size: 28px; font-weight: 700; color: #333; }
         .stat-label { color: #666; font-size: 13px; margin-top: 8px; }
         .stat-trend { font-size: 11px; margin-top: 6px; color: #28a745; }
         
-        /* Quick Actions */
         .quick-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 32px; }
         .action-btn { padding: 14px 24px; background: white; border: 1px solid #ddd; border-radius: 10px; text-decoration: none; color: #333; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s; }
         .action-btn:hover { border-color: #667eea; color: #667eea; transform: translateY(-2px); }
         
-        /* Section */
         .section { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
         .section-title a { font-size: 13px; color: #667eea; text-decoration: none; }
         
-        /* Tables */
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
         th { font-weight: 600; color: #666; font-size: 13px; }
         tr:hover { background: #f8f9fa; cursor: pointer; }
         
-        /* Badges */
         .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; display: inline-block; }
         .badge-success { background: #d4edda; color: #155724; }
         .badge-warning { background: #fff3cd; color: #856404; }
         .badge-info { background: #d1ecf1; color: #0c5460; }
         .badge-danger { background: #f8d7da; color: #721c24; }
-        .badge-primary { background: #cce5ff; color: #004085; }
         
-        /* Buttons */
         .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; text-decoration: none; display: inline-block; }
         .btn-primary { background: #667eea; color: white; }
         
-        /* Pending Payment Alert */
-        .alert { background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px; border-radius: 8px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-        .alert-warning { color: #856404; }
-        .alert a { background: #ffc107; color: #333; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 500; }
-        
-        /* How It Works */
         .how-it-works { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; text-align: center; }
         .step { padding: 16px; }
         .step-icon { font-size: 32px; margin-bottom: 8px; }
@@ -194,7 +186,6 @@ $conn->close();
     </header>
     
     <div class="container">
-        <!-- Welcome Banner -->
         <div class="welcome">
             <h1>Welcome back, <?php echo htmlspecialchars($_SESSION['user_name']); ?>! 👋</h1>
             <p>Your trusted marketplace for buying, selling, and renting with secure escrow payments</p>
@@ -215,14 +206,29 @@ $conn->close();
         </div>
         <?php endif; ?>
         
-        <!-- Pending Payment Alert -->
-        <?php if ($pendingPaymentListings && $pendingPaymentListings->num_rows > 0): ?>
+        <!-- Pending Legal Process Alert -->
+        <?php if ($pending_legal->num_rows > 0): ?>
         <div class="alert">
             <div class="alert-warning">
-                <i class="fas fa-clock"></i> <strong><?php echo $pendingPaymentListings->num_rows; ?> listing(s) approved!</strong>
+                <i class="fas fa-gavel"></i> <strong><?php echo $pending_legal->num_rows; ?> transaction(s)</strong> require legal process completion.
+                <span>Please complete the legal documentation and confirm.</span>
+            </div>
+            <a href="legal_process.php?id=<?php echo $pending_legal->fetch_assoc()['id']; ?>">Complete Legal Process →</a>
+        </div>
+        <?php 
+            // Reset pointer
+            $pending_legal->data_seek(0);
+        endif; 
+        ?>
+        
+        <!-- Pending Payment Alert -->
+        <?php if ($stats['approved_listings'] > 0): ?>
+        <div class="alert">
+            <div class="alert-warning">
+                <i class="fas fa-clock"></i> <strong><?php echo $stats['approved_listings']; ?> listing(s) approved!</strong>
                 <span>Pay the required deposit and commission to activate your listings.</span>
             </div>
-            <a href="listings.php?status=pending">Pay Now <i class="fas fa-arrow-right"></i></a>
+            <a href="listings.php?status=pending">Pay Now →</a>
         </div>
         <?php endif; ?>
         
@@ -239,9 +245,6 @@ $conn->close();
                 <div class="stat-label">Active Listings</div>
                 <?php if ($stats['pending_listings'] > 0): ?>
                     <div class="stat-trend"><i class="fas fa-clock"></i> <?php echo $stats['pending_listings']; ?> pending approval</div>
-                <?php endif; ?>
-                <?php if ($stats['approved_listings'] > 0): ?>
-                    <div class="stat-trend"><i class="fas fa-credit-card"></i> <?php echo $stats['approved_listings']; ?> awaiting payment</div>
                 <?php endif; ?>
             </div>
             <div class="stat-card">
@@ -319,7 +322,7 @@ $conn->close();
             </div>
             <?php if ($recentListings->num_rows > 0): ?>
                 <div style="overflow-x: auto;">
-                    </table>
+                    <table>
                         <thead>
                             <tr><th>Title</th><th>Type</th><th>Price</th><th>Approval Status</th><th>Listing Status</th><th>Views</th><th>Posted</th><th>Action</th></tr>
                         </thead>
@@ -366,6 +369,45 @@ $conn->close();
             <?php endif; ?>
         </div>
         
+        <!-- Pending Legal Transactions -->
+        <?php if ($pending_legal->num_rows > 0): ?>
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-gavel"></i> Legal Process Required
+                <a href="#">Complete Now →</a>
+            </div>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr><th>Transaction ID</th><th>Item</th><th>Amount</th><th>Your Role</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php while($legal = $pending_legal->fetch_assoc()): ?>
+                            <tr>
+                                <td>#<?php echo $legal['id']; ?></td>
+                                <td><?php echo htmlspecialchars($legal['title']); ?></td>
+                                <td><?php echo formatMoney($legal['total_amount']); ?></td>
+                                <td><?php echo ucfirst($legal['my_role']); ?></td>
+                                <td>
+                                    <?php
+                                    if ($legal['my_role'] == 'buyer') {
+                                        echo $legal['buyer_legal_confirmed'] ? '<span class="badge badge-success">Confirmed</span>' : '<span class="badge badge-warning">Not Confirmed</span>';
+                                    } else {
+                                        echo $legal['seller_legal_confirmed'] ? '<span class="badge badge-success">Confirmed</span>' : '<span class="badge badge-warning">Not Confirmed</span>';
+                                    }
+                                    ?>
+                                </td>
+                                <td>
+                                    <a href="legal_process.php?id=<?php echo $legal['id']; ?>" class="btn-sm btn-primary">Complete Legal Process</a>
+                                </td>
+                            </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+        
         <!-- How Escrow Works -->
         <div class="section">
             <div class="section-title">How Escrow Payment Works</div>
@@ -382,12 +424,12 @@ $conn->close();
                 </div>
                 <div class="step">
                     <div class="step-icon">3️⃣</div>
-                    <div class="step-title">Item delivered/service completed</div>
-                    <div class="step-desc">Seller fulfills the order</div>
+                    <div class="step-title">Legal process & documentation</div>
+                    <div class="step-desc">Upload contracts, both confirm</div>
                 </div>
                 <div class="step">
                     <div class="step-icon">4️⃣</div>
-                    <div class="step-title">Buyer confirms</div>
+                    <div class="step-title">Buyer confirms delivery</div>
                     <div class="step-desc">Payment released to seller</div>
                 </div>
             </div>
