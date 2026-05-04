@@ -1,7 +1,74 @@
 <?php
-// includes/auth.php
+// includes/auth.php - Complete user and admin authentication (FIXED - no duplicate session)
 
-session_start();
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/functions.php';
+
+// ============================================
+// USER AUTHENTICATION FUNCTIONS
+// ============================================
+
+function isLoggedIn() {
+    return isset($_SESSION['user_logged_in']) && $_SESSION['user_logged_in'] === true;
+}
+
+function requireLogin() {
+    if (!isLoggedIn()) {
+        $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'];
+        header('Location: /broker_system/auth/login.php');
+        exit;
+    }
+}
+
+function requireRole($role) {
+    requireLogin();
+    if ($_SESSION['user_role'] !== $role) {
+        header('Location: /broker_system/user/dashboard.php');
+        exit;
+    }
+}
+
+function getCurrentUser() {
+    if (!isLoggedIn()) return null;
+    return [
+        'id' => $_SESSION['user_id'],
+        'name' => $_SESSION['user_name'],
+        'email' => $_SESSION['user_email'],
+        'role' => $_SESSION['user_role'],
+        'balance' => $_SESSION['user_balance'] ?? 0
+    ];
+}
+
+function userLogin($userId, $fullName, $email, $role, $balance) {
+    $_SESSION['user_logged_in'] = true;
+    $_SESSION['user_id'] = $userId;
+    $_SESSION['user_name'] = $fullName;
+    $_SESSION['user_email'] = $email;
+    $_SESSION['user_role'] = $role;
+    $_SESSION['user_balance'] = $balance;
+    
+    // Update last login
+    $conn = getDbConnection();
+    $stmt = $conn->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $conn->close();
+}
+
+function userLogout() {
+    session_destroy();
+    header('Location: /broker_system/auth/login.php');
+    exit;
+}
+
+// ============================================
+// ADMIN AUTHENTICATION FUNCTIONS
+// ============================================
 
 function isAdminLoggedIn() {
     return isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
@@ -14,21 +81,16 @@ function requireAdminLogin() {
     }
 }
 
-function adminLogin($password) {
-    // Simple admin auth (use hashed password in production)
-    $admin_password = 'admin123'; // Change this!
-    
-    if ($password === $admin_password) {
-        $_SESSION['admin_logged_in'] = true;
-        $_SESSION['admin_id'] = 1;
-        $_SESSION['admin_name'] = 'Administrator';
-        return true;
-    }
-    return false;
+function adminLogin($adminId, $fullName, $email) {
+    $_SESSION['admin_logged_in'] = true;
+    $_SESSION['admin_id'] = $adminId;
+    $_SESSION['admin_name'] = $fullName;
+    $_SESSION['admin_email'] = $email;
 }
 
 function adminLogout() {
     session_destroy();
-    header('Location: login.php');
+    header('Location: /broker_system/admin/login.php');
     exit;
 }
+?>
