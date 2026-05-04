@@ -1,20 +1,30 @@
 <?php
-// user/withdraw.php - Request withdrawal
+// user/withdraw.php - Withdrawal Request Page
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if (!isset($_SESSION['user_logged_in']) || $_SESSION['user_logged_in'] !== true) {
+    header('Location: /broker_system/auth/login.php');
+    exit;
+}
+
+$page_title = 'Withdraw Funds';
+ob_start();
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-require_once '../includes/auth.php';
-
-requireLogin();
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
-$error = '';
-$success = '';
 
 // Get user balance
 $user = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
-$balance = $user['balance'];
+$balance = $user['balance'] ?? 0;
+
+$error = '';
+$success = '';
 
 $min_withdrawal = getSetting('min_withdrawal', 100);
 $max_withdrawal = getSetting('max_withdrawal', 100000);
@@ -34,7 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (empty($bank_name) || empty($account_number) || empty($account_name)) {
         $error = "Please fill in all bank details";
     } else {
-        // Deduct balance and create withdrawal request
         $conn->begin_transaction();
         
         try {
@@ -63,92 +72,172 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $conn->close();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Withdraw Funds - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #f5f6fa; }
-        .header { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 16px 24px; }
-        .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
-        .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
-        .container { max-width: 600px; margin: 40px auto; padding: 0 24px; }
-        .card { background: white; border-radius: 12px; padding: 32px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .card h1 { font-size: 24px; margin-bottom: 8px; }
-        .balance-info { background: #e3f2fd; padding: 16px; border-radius: 8px; margin: 20px 0; text-align: center; }
-        .balance-amount { font-size: 28px; font-weight: 700; color: #667eea; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
-        input { width: 100%; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-        input:focus { outline: none; border-color: #667eea; }
-        button { width: 100%; padding: 14px; background: #667eea; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
-        button:hover { background: #5a67d8; }
-        .error { background: #f8d7da; color: #721c24; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .success { background: #d4edda; color: #155724; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .info-text { font-size: 12px; color: #888; margin-top: 4px; }
-        .limits { font-size: 13px; color: #666; margin-top: 16px; text-align: center; }
-    </style>
-</head>
-<body>
-    <header class="header">
-        <div class="header-content">
-            <a href="/broker_system/index.php" class="logo">🏪 Ethio Brokerplace</a>
-            <a href="wallet.php" style="color: #666;"><i class="fas fa-arrow-left"></i> Back to Wallet</a>
-        </div>
-    </header>
+
+<style>
+    .page-header {
+        margin-bottom: 28px;
+    }
     
-    <div class="container">
-        <div class="card">
-            <h1><i class="fas fa-money-bill-wave"></i> Withdraw Funds</h1>
-            <p>Request a withdrawal to your bank account</p>
-            
-            <div class="balance-info">
-                <div>Available Balance</div>
-                <div class="balance-amount"><?php echo formatMoney($balance); ?></div>
-            </div>
-            
-            <?php if ($error): ?>
-                <div class="error"><i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?></div>
-            <?php endif; ?>
-            
-            <?php if ($success): ?>
-                <div class="success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?></div>
-            <?php endif; ?>
-            
-            <form method="POST">
-                <div class="form-group">
-                    <label>Amount (ETB)</label>
-                    <input type="number" name="amount" step="0.01" min="<?php echo $min_withdrawal; ?>" max="<?php echo min($max_withdrawal, $balance); ?>" required placeholder="Enter amount">
-                    <div class="info-text">Min: <?php echo formatMoney($min_withdrawal); ?> | Max: <?php echo formatMoney(min($max_withdrawal, $balance)); ?></div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Bank Name</label>
-                    <input type="text" name="bank_name" required placeholder="e.g., Commercial Bank of Ethiopia, Dashen Bank">
-                </div>
-                
-                <div class="form-group">
-                    <label>Account Number</label>
-                    <input type="text" name="account_number" required placeholder="Your bank account number">
-                </div>
-                
-                <div class="form-group">
-                    <label>Account Holder Name</label>
-                    <input type="text" name="account_name" required placeholder="Name as it appears on the account">
-                </div>
-                
-                <button type="submit"><i class="fas fa-paper-plane"></i> Submit Withdrawal Request</button>
-            </form>
-            
-            <div class="limits">
-                <i class="fas fa-clock"></i> Withdrawals are processed within 24-48 hours
-            </div>
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 8px;
+    }
+    
+    .balance-card {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border-radius: 24px;
+        padding: 24px;
+        color: white;
+        margin-bottom: 24px;
+        text-align: center;
+    }
+    
+    .balance-label {
+        font-size: 14px;
+        opacity: 0.9;
+        margin-bottom: 8px;
+    }
+    
+    .balance-amount {
+        font-size: 36px;
+        font-weight: 700;
+    }
+    
+    .card {
+        background: white;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #334155;
+    }
+    
+    .form-group input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+    
+    .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+    }
+    
+    .btn {
+        width: 100%;
+        padding: 14px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 40px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+    }
+    
+    .message {
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+    }
+    
+    .message-success {
+        background: #d1fae5;
+        color: #059669;
+    }
+    
+    .message-error {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+    
+    .info-text {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 4px;
+    }
+    
+    .limits {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #f1f5f9;
+        text-align: center;
+        font-size: 13px;
+        color: #64748b;
+    }
+</style>
+
+<div class="page-header">
+    <h1>Withdraw Funds</h1>
+    <p>Request a withdrawal to your bank account</p>
+</div>
+
+<div class="balance-card">
+    <div class="balance-label">Available Balance</div>
+    <div class="balance-amount"><?php echo formatMoney($balance); ?></div>
+</div>
+
+<div class="card">
+    <?php if ($error): ?>
+        <div class="message message-error"><i class="fas fa-exclamation-triangle"></i> <?php echo $error; ?></div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="message message-success"><i class="fas fa-check-circle"></i> <?php echo $success; ?></div>
+    <?php endif; ?>
+    
+    <form method="POST">
+        <div class="form-group">
+            <label>Amount (ETB)</label>
+            <input type="number" name="amount" step="0.01" min="<?php echo $min_withdrawal; ?>" max="<?php echo min($max_withdrawal, $balance); ?>" required placeholder="Enter amount">
+            <div class="info-text">Min: <?php echo formatMoney($min_withdrawal); ?> | Max: <?php echo formatMoney(min($max_withdrawal, $balance)); ?></div>
         </div>
+        
+        <div class="form-group">
+            <label>Bank Name</label>
+            <input type="text" name="bank_name" required placeholder="e.g., Commercial Bank of Ethiopia, Dashen Bank">
+        </div>
+        
+        <div class="form-group">
+            <label>Account Number</label>
+            <input type="text" name="account_number" required placeholder="Your bank account number">
+        </div>
+        
+        <div class="form-group">
+            <label>Account Holder Name</label>
+            <input type="text" name="account_name" required placeholder="Name as it appears on the account">
+        </div>
+        
+        <button type="submit" class="btn"><i class="fas fa-paper-plane"></i> Submit Withdrawal Request</button>
+    </form>
+    
+    <div class="limits">
+        <i class="fas fa-clock"></i> Withdrawals are processed within 24-48 hours
     </div>
-</body>
-</html>
+</div>
+
+<?php
+$content = ob_get_clean();
+include '../includes/layout.php';
+?>
