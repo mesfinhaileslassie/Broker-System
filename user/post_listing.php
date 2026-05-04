@@ -1,9 +1,10 @@
 <?php
-// user/post_listing.php - Post new item for sale
+// user/post_listing.php - Post new listing with images and admin approval
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/upload.php';
 
 requireLogin();
 
@@ -11,7 +12,7 @@ $conn = getDbConnection();
 $error = '';
 $success = '';
 
-// Get categories for dropdown
+// Get categories
 $categories = $conn->query("SELECT * FROM categories WHERE is_active = 1 ORDER BY type, name");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -23,20 +24,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $location = trim($_POST['location']);
     $user_id = $_SESSION['user_id'];
     
-    // Get deposit and commission percentages for this item type
-    $depositPercent = getSetting("deposit_percent_{$type}", 30);
-    $commissionPercent = getSetting("commission_percent_{$type}", 15);
+    // Handle cover image
+    $cover_image = '';
+    if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
+        $upload = uploadImage($_FILES['cover_image']);
+        if ($upload['success']) {
+            $cover_image = $upload['filename'];
+        } else {
+            $error = $upload['error'];
+        }
+    }
+    
+    // Handle gallery images
+    $gallery_images = [];
+    if (isset($_FILES['gallery_images'])) {
+        foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
+            if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
+                $file = [
+                    'name' => $_FILES['gallery_images']['name'][$key],
+                    'tmp_name' => $_FILES['gallery_images']['tmp_name'][$key],
+                    'size' => $_FILES['gallery_images']['size'][$key],
+                    'error' => $_FILES['gallery_images']['error'][$key]
+                ];
+                $upload = uploadImage($file);
+                if ($upload['success']) {
+                    $gallery_images[] = $upload['filename'];
+                }
+            }
+        }
+    }
+    
+    $gallery_json = !empty($gallery_images) ? json_encode($gallery_images) : null;
     
     if (empty($title) || empty($description) || $price <= 0) {
         $error = 'Please fill in all required fields';
+    } elseif (empty($cover_image)) {
+        $error = 'Please upload a cover image';
     } else {
-        $stmt = $conn->prepare("INSERT INTO listings (seller_id, type, title, description, price, category_id, location, deposit_percent, commission_percent, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')");
-        $stmt->bind_param("isssdissi", $user_id, $type, $title, $description, $price, $category_id, $location, $depositPercent, $commissionPercent);
+        // Insert listing with pending approval
+        $stmt = $conn->prepare("INSERT INTO listings (seller_id, type, title, description, price, category_id, location, cover_image, gallery_images, approval_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending')");
+        $stmt->bind_param("isssdissi", $user_id, $type, $title, $description, $price, $category_id, $location, $cover_image, $gallery_json);
         
         if ($stmt->execute()) {
             $listing_id = $conn->insert_id;
-            $success = "Listing posted successfully!";
-            header("Refresh: 2; URL=product.php?id=$listing_id");
+            
+            // Create admin notification
+            $stmt2 = $conn->prepare("INSERT INTO admin_notifications (type, title, message, listing_id, user_id) VALUES ('new_listing', 'New Listing Pending Approval', ?, ?, ?)");
+            $message = "User {$_SESSION['user_name']} posted a new {$type}: {$title} for {$price} ETB";
+            $stmt2->bind_param("sii", $message, $listing_id, $user_id);
+            $stmt2->execute();
+            
+            $success = "Listing submitted for admin approval. You will be notified once approved.";
+            header("Refresh: 3; URL=dashboard.php");
         } else {
             $error = "Failed to post listing: " . $conn->error;
         }
@@ -61,7 +100,8 @@ $conn->close();
         .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
         .container { max-width: 800px; margin: 40px auto; padding: 0 24px; }
         .card { background: white; border-radius: 12px; padding: 32px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .card h1 { font-size: 24px; margin-bottom: 24px; color: #333; }
+        .card h1 { font-size: 24px; margin-bottom: 8px; color: #333; }
+        .card h1 small { font-size: 14px; color: #888; font-weight: normal; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
         input, select, textarea { width: 100%; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; }
@@ -71,12 +111,16 @@ $conn->close();
         button:hover { background: #5a67d8; }
         .error { background: #fee; color: #c33; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
         .success { background: #d4edda; color: #155724; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .info-text { font-size: 12px; color: #888; margin-top: 4px; }
+        .image-preview { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .preview-item { position: relative; width: 100px; height: 100px; }
+        .preview-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+        .remove-image { position: absolute; top: -8px; right: -8px; background: red; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; }
         .type-selector { display: flex; gap: 12px; margin-bottom: 20px; }
         .type-option { flex: 1; padding: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center; cursor: pointer; transition: all 0.3s; }
         .type-option.selected { border-color: #667eea; background: #f0f4ff; }
         .type-option i { font-size: 24px; margin-bottom: 8px; display: block; }
-        .type-option.active { border-color: #667eea; background: #f0f4ff; }
+        .info-text { font-size: 12px; color: #888; margin-top: 4px; }
+        .approval-info { background: #e3f2fd; padding: 16px; border-radius: 8px; margin-top: 20px; text-align: center; }
     </style>
 </head>
 <body>
@@ -90,6 +134,7 @@ $conn->close();
     <div class="container">
         <div class="card">
             <h1><i class="fas fa-plus-circle"></i> Post New Listing</h1>
+            <p style="color: #666; margin-bottom: 24px;">Your listing will be reviewed by admin before going live</p>
             
             <?php if ($error): ?>
                 <div class="error"><i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?></div>
@@ -99,7 +144,7 @@ $conn->close();
                 <div class="success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?></div>
             <?php endif; ?>
             
-            <form method="POST" id="listingForm">
+            <form method="POST" enctype="multipart/form-data" id="listingForm">
                 <div class="type-selector" id="typeSelector">
                     <div class="type-option" data-type="product" onclick="selectType('product')">
                         <i class="fas fa-box"></i>
@@ -145,13 +190,13 @@ $conn->close();
                 
                 <div class="form-group">
                     <label>Description *</label>
-                    <textarea name="description" required placeholder="Describe your item, job requirements, or rental property..."></textarea>
+                    <textarea name="description" required placeholder="Describe your item, job requirements, or rental property in detail..."></textarea>
                 </div>
                 
                 <div class="form-group">
                     <label>Price (ETB) *</label>
                     <input type="number" name="price" step="0.01" min="1" required placeholder="0.00">
-                    <div class="info-text">Buyer will pay deposit + commission upfront. Seller also pays deposit.</div>
+                    <div class="info-text">Admin will set deposit and commission percentages for this listing</div>
                 </div>
                 
                 <div class="form-group">
@@ -159,12 +204,33 @@ $conn->close();
                     <input type="text" name="location" placeholder="e.g., Addis Ababa, Bole">
                 </div>
                 
-                <button type="submit"><i class="fas fa-save"></i> Post Listing</button>
+                <div class="form-group">
+                    <label>Cover Image *</label>
+                    <input type="file" name="cover_image" accept="image/*" required onchange="previewCoverImage(this)">
+                    <div class="info-text">This will be the main image displayed (max 5MB)</div>
+                    <div id="coverPreview" class="image-preview"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Gallery Images (Optional)</label>
+                    <input type="file" name="gallery_images[]" accept="image/*" multiple onchange="previewGalleryImages(this)">
+                    <div class="info-text">You can select multiple images (max 5MB each)</div>
+                    <div id="galleryPreview" class="image-preview"></div>
+                </div>
+                
+                <button type="submit"><i class="fas fa-paper-plane"></i> Submit for Admin Review</button>
             </form>
+            
+            <div class="approval-info">
+                <i class="fas fa-clock"></i> <strong>Note:</strong> Your listing will be reviewed by an admin. You'll be notified once approved. After approval, you'll need to pay the required deposit and commission before your listing goes live.
+            </div>
         </div>
     </div>
     
     <script>
+        let coverImages = [];
+        let galleryImages = [];
+        
         function selectType(type) {
             document.getElementById('listingType').value = type;
             document.querySelectorAll('.type-option').forEach(opt => {
@@ -183,6 +249,38 @@ $conn->close();
                 } else {
                     option.style.display = 'none';
                 }
+            }
+        }
+        
+        function previewCoverImage(input) {
+            const preview = document.getElementById('coverPreview');
+            preview.innerHTML = '';
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const div = document.createElement('div');
+                    div.className = 'preview-item';
+                    div.innerHTML = `<img src="${e.target.result}" alt="Cover"><div class="remove-image" onclick="this.parentElement.remove()">×</div>`;
+                    preview.appendChild(div);
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+        
+        function previewGalleryImages(input) {
+            const preview = document.getElementById('galleryPreview');
+            preview.innerHTML = '';
+            if (input.files) {
+                Array.from(input.files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const div = document.createElement('div');
+                        div.className = 'preview-item';
+                        div.innerHTML = `<img src="${e.target.result}" alt="Gallery"><div class="remove-image" onclick="this.parentElement.remove()">×</div>`;
+                        preview.appendChild(div);
+                    }
+                    reader.readAsDataURL(file);
+                });
             }
         }
         
