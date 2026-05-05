@@ -1,5 +1,5 @@
 <?php
-// user/pay_listing.php - REAL payment page connected to Telebirr
+// user/pay_listing.php - Simple payment page (No PIN required)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -9,17 +9,15 @@ requireLogin();
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
+$listing_id = intval($_GET['listing_id'] ?? 0);
 $error = '';
+$success = '';
 $code = '';
 $amount = 0;
 $listing_info = null;
-$payment_success = false;
-
-// Get listing ID from URL
-$listing_id = intval($_GET['listing_id'] ?? 0);
 
 if ($listing_id > 0) {
-    // Get listing details (only approved and pending payment)
+    // Get listing details
     $listing_result = $conn->query("
         SELECT l.*, 
                l.admin_deposit_percent as deposit_percent, 
@@ -39,7 +37,7 @@ if ($listing_id > 0) {
         $commission_amount = $listing_info['price'] * ($listing_info['commission_percent'] / 100);
         $amount = $deposit_amount + $commission_amount;
         
-        // Check if a payment code already exists for this listing
+        // Check if a payment code already exists
         $code_check = $conn->query("
             SELECT pc.code, pc.expires_at 
             FROM payment_codes pc
@@ -49,7 +47,6 @@ if ($listing_id > 0) {
         ");
         
         if ($code_check->num_rows > 0) {
-            // Existing code found
             $existing = $code_check->fetch_assoc();
             $code = $existing['code'];
         } else {
@@ -74,7 +71,7 @@ if ($listing_id > 0) {
                 $transaction_id = $transaction_check->fetch_assoc()['id'];
             }
             
-            // Save payment code to database
+            // Save payment code
             $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
             $stmt = $conn->prepare("
                 INSERT INTO payment_codes (code, transaction_id, amount, user_id, type, expires_at, status) 
@@ -89,39 +86,6 @@ if ($listing_id > 0) {
     }
 }
 
-// Handle payment confirmation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_payment'])) {
-    $entered_code = $_POST['payment_code'];
-    $pin = $_POST['pin'];
-    
-    if ($pin == '1234') {
-        // Verify the code
-        $verify = $conn->query("
-            SELECT pc.*, t.listing_id 
-            FROM payment_codes pc
-            JOIN transactions t ON pc.transaction_id = t.id
-            WHERE pc.code = '$entered_code' AND pc.status = 'pending'
-        ");
-        
-        if ($verify->num_rows > 0) {
-            $payment = $verify->fetch_assoc();
-            
-            // Update listing to active
-            $conn->query("UPDATE listings SET status = 'active' WHERE id = {$payment['listing_id']}");
-            
-            // Mark payment code as used
-            $conn->query("UPDATE payment_codes SET status = 'used' WHERE code = '$entered_code'");
-            
-            $payment_success = true;
-            $code = ''; // clear code display
-        } else {
-            $error = "Invalid payment code";
-        }
-    } else {
-        $error = "Incorrect PIN";
-    }
-}
-
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -129,103 +93,440 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Complete Payment - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Pay for Listing - Ethio Brokerplace</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #f5f6fa; }
-        .header { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 16px 24px; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+        
+        .header { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 16px 24px; }
         .header-content { max-width: 600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
         .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
+        
         .container { max-width: 600px; margin: 40px auto; padding: 0 24px; }
-        .card { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .payment-code-box { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; text-align: center; margin: 20px 0; }
-        .payment-code { font-size: 48px; font-weight: 700; letter-spacing: 8px; background: white; color: #333; padding: 20px; border-radius: 12px; margin: 16px 0; font-family: monospace; }
-        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; }
-        .btn-primary { background: #667eea; color: white; text-decoration: none; display: inline-block; text-align: center; }
-        .btn-success { background: #28a745; color: white; }
-        .error { background: #f8d7da; color: #721c24; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .success { background: #d4edda; color: #155724; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .info-box { background: #e3f2fd; padding: 16px; border-radius: 8px; margin: 20px 0; }
-        .pin-input { font-size: 24px; text-align: center; letter-spacing: 5px; padding: 10px; width: 150px; margin: 10px auto; display: block; }
+        
+        /* Payment Card */
+        .payment-card {
+            background: white;
+            border-radius: 28px;
+            overflow: hidden;
+            box-shadow: 0 20px 35px -10px rgba(0,0,0,0.1);
+        }
+        
+        /* Header */
+        .payment-header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 32px;
+            text-align: center;
+            color: white;
+        }
+        
+        .payment-header h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .payment-header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        /* Body */
+        .payment-body {
+            padding: 32px;
+        }
+        
+        /* Item Details */
+        .item-details {
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .item-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 14px;
+        }
+        
+        .detail-label {
+            color: #64748b;
+        }
+        
+        .detail-value {
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .detail-total {
+            border-top: 2px solid #e2e8f0;
+            margin-top: 8px;
+            padding-top: 12px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .detail-total .detail-value {
+            color: #667eea;
+            font-size: 20px;
+        }
+        
+        /* Payment Code Box */
+        .code-box {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 20px;
+            padding: 28px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        
+        .code-label {
+            font-size: 13px;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 12px;
+        }
+        
+        .payment-code {
+            font-size: 52px;
+            font-weight: 800;
+            letter-spacing: 12px;
+            background: white;
+            color: #1e293b;
+            padding: 20px;
+            border-radius: 16px;
+            font-family: monospace;
+            margin: 16px 0;
+        }
+        
+        .copy-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .copy-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.02);
+        }
+        
+        /* Instructions */
+        .instructions {
+            background: #f1f5f9;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .instructions h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1e293b;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            font-size: 13px;
+            color: #475569;
+        }
+        
+        .step-number {
+            width: 28px;
+            height: 28px;
+            background: #e2e8f0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+        }
+        
+        /* Status Section */
+        .status-section {
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: white;
+            border-radius: 40px;
+            margin-bottom: 16px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f59e0b;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        
+        .status-text {
+            font-size: 14px;
+            color: #64748b;
+        }
+        
+        .success-text {
+            color: #10b981;
+            font-weight: 600;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 12px 28px;
+            border-radius: 40px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .btn-primary:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #e2e8f0;
+            color: #64748b;
+        }
+        
+        .error-message {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 14px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            border-left: 4px solid #dc2626;
+        }
+        
+        .success-message {
+            background: #d1fae5;
+            color: #059669;
+            padding: 14px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            border-left: 4px solid #059669;
+            text-align: center;
+        }
+        
+        .timer {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 12px;
+        }
+        
+        @media (max-width: 480px) {
+            .payment-code {
+                font-size: 32px;
+                letter-spacing: 6px;
+            }
+            .payment-body {
+                padding: 24px;
+            }
+        }
     </style>
 </head>
 <body>
     <header class="header">
         <div class="header-content">
-            <a href="/broker_system/index.php" class="logo">🏪 Brokerplace</a>
-            <a href="listings.php" style="color: #666;"><i class="fas fa-arrow-left"></i> Back</a>
+            <a href="/broker_system/index.php" class="logo">🏪 Ethio Brokerplace</a>
+            <a href="listings.php" style="color: #64748b; text-decoration: none;"><i class="fas fa-arrow-left"></i> Back</a>
         </div>
     </header>
     
     <div class="container">
-        <div class="card">
-            <h2 style="margin-bottom: 16px;"><i class="fas fa-credit-card"></i> Complete Payment</h2>
-            
-            <?php if ($payment_success): ?>
-                <div class="success">
-                    <i class="fas fa-check-circle"></i> 
-                    <strong>Payment Successful!</strong><br>
-                    Your listing has been activated. You can now manage it from your dashboard.
-                </div>
-                <a href="listings.php" class="btn btn-primary" style="margin-top: 16px;">Go to My Listings</a>
-                
-            <?php elseif ($error): ?>
-                <div class="error"><i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?></div>
-                <a href="listings.php?status=pending" class="btn btn-primary">Go Back to Listings</a>
-                
-            <?php elseif ($code && $listing_info): ?>
-                <div class="info-box">
-                    <h3>Payment Details</h3>
-                    <p><strong>Listing:</strong> <?php echo htmlspecialchars($listing_info['title']); ?></p>
-                    <p><strong>Item Price:</strong> <?php echo formatMoney($listing_info['price']); ?></p>
-                    <p><strong>Deposit (<?php echo $listing_info['deposit_percent']; ?>%):</strong> <?php echo formatMoney($listing_info['price'] * $listing_info['deposit_percent'] / 100); ?></p>
-                    <p><strong>Commission (<?php echo $listing_info['commission_percent']; ?>%):</strong> <?php echo formatMoney($listing_info['price'] * $listing_info['commission_percent'] / 100); ?></p>
-                    <p><strong style="color:#667eea;">Total to Pay: <?php echo formatMoney($amount); ?></strong></p>
+        <?php if ($error): ?>
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+            </div>
+            <a href="listings.php?status=pending" class="btn btn-primary" style="display: block; text-align: center;">Go Back to Listings</a>
+        <?php elseif ($code && $listing_info): ?>
+            <div class="payment-card">
+                <div class="payment-header">
+                    <h2><i class="fas fa-credit-card"></i> Complete Payment</h2>
+                    <p>Activate your listing by paying deposit + commission</p>
                 </div>
                 
-                <div class="payment-code-box">
-                    <div class="payment-code" id="paymentCode"><?php echo $code; ?></div>
-                    <button class="btn btn-primary" onclick="copyCode()" style="background: rgba(255,255,255,0.2); width: auto;">
-                        <i class="fas fa-copy"></i> Copy Code
-                    </button>
-                </div>
-                
-                <div class="info-box">
-                    <h3>How to Pay with Telebirr:</h3>
-                    <ol style="margin-left: 20px;">
-                        <li>Open Telebirr app on your phone</li>
-                        <li>Go to Marketplace / Payment section</li>
-                        <li>Enter this code: <strong><?php echo $code; ?></strong></li>
-                        <li>Confirm payment with your Telebirr PIN</li>
-                        <li>After payment, click the button below to confirm</li>
-                    </ol>
-                </div>
-                
-                <form method="POST">
-                    <div style="text-align: center;">
-                        <input type="hidden" name="payment_code" value="<?php echo $code; ?>">
-                        <label><strong>Enter Telebirr PIN to confirm:</strong></label>
-                        <input type="password" name="pin" class="pin-input" maxlength="4" pattern="[0-9]{4}" required placeholder="1234">
+                <div class="payment-body">
+                    <!-- Item Details -->
+                    <div class="item-details">
+                        <div class="item-title"><?php echo htmlspecialchars($listing_info['title']); ?></div>
+                        <div class="detail-row">
+                            <span class="detail-label">Item Price</span>
+                            <span class="detail-value"><?php echo formatMoney($listing_info['price']); ?></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Deposit (<?php echo $listing_info['deposit_percent']; ?>%)</span>
+                            <span class="detail-value"><?php echo formatMoney($listing_info['price'] * $listing_info['deposit_percent'] / 100); ?></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Commission (<?php echo $listing_info['commission_percent']; ?>%)</span>
+                            <span class="detail-value"><?php echo formatMoney($listing_info['price'] * $listing_info['commission_percent'] / 100); ?></span>
+                        </div>
+                        <div class="detail-row detail-total">
+                            <span class="detail-label">Total to Pay</span>
+                            <span class="detail-value"><?php echo formatMoney($amount); ?></span>
+                        </div>
                     </div>
-                    <button type="submit" name="confirm_payment" class="btn btn-success" style="margin-top: 16px;">
-                        <i class="fas fa-check-circle"></i> Confirm Payment & Activate Listing
-                    </button>
-                </form>
-                
-            <?php else: ?>
-                <div class="error">No valid listing found for payment.</div>
-                <a href="listings.php?status=pending" class="btn btn-primary">Go to My Listings</a>
-            <?php endif; ?>
-        </div>
+                    
+                    <!-- Payment Code -->
+                    <div class="code-box">
+                        <div class="code-label">Your Telebirr Payment Code</div>
+                        <div class="payment-code" id="paymentCode"><?php echo $code; ?></div>
+                        <button class="copy-btn" onclick="copyCode()">
+                            <i class="fas fa-copy"></i> Copy Code
+                        </button>
+                        <div class="timer" id="timer">Code expires in 10:00</div>
+                    </div>
+                    
+                    <!-- Instructions -->
+                    <div class="instructions">
+                        <h4><i class="fas fa-mobile-alt"></i> How to Pay with Telebirr</h4>
+                        <div class="step">
+                            <div class="step-number">1</div>
+                            <span>Open Telebirr app on your phone</span>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">2</div>
+                            <span>Go to Marketplace / Payment section</span>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">3</div>
+                            <span>Enter this code: <strong><?php echo $code; ?></strong></span>
+                        </div>
+                        <div class="step">
+                            <div class="step-number">4</div>
+                            <span>Confirm payment with your Telebirr PIN</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Payment Status -->
+                    <div class="status-section" id="statusSection">
+                        <div class="status-indicator">
+                            <div class="status-dot"></div>
+                            <span class="status-text" id="statusText">Waiting for payment confirmation...</span>
+                        </div>
+                        <div id="actionButtons">
+                            <a href="listings.php" class="btn btn-outline" style="margin-top: 12px; display: inline-block;">
+                                <i class="fas fa-arrow-left"></i> Return to My Listings
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="error-message">
+                No payment required. <a href="listings.php">Go to My Listings</a>
+            </div>
+        <?php endif; ?>
     </div>
     
     <script>
+        let code = '<?php echo $code; ?>';
+        let checkInterval;
+        let timeLeft = 600; // 10 minutes in seconds
+        let timerInterval;
+        
         function copyCode() {
-            const code = document.getElementById('paymentCode').innerText;
             navigator.clipboard.writeText(code);
             alert('Payment code copied: ' + code);
+        }
+        
+        function updateTimer() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            const timerElement = document.getElementById('timer');
+            if (timerElement) {
+                timerElement.textContent = `Code expires in ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                clearInterval(checkInterval);
+                document.getElementById('statusText').innerHTML = '⚠️ Code expired. Please generate a new code.';
+                document.getElementById('statusText').style.color = '#dc2626';
+                const statusDot = document.querySelector('.status-dot');
+                if (statusDot) statusDot.style.background = '#dc2626';
+            }
+            timeLeft--;
+        }
+        
+        function checkPaymentStatus() {
+            if (!code) return;
+            
+            fetch('/broker_system/user/api/check_payment_status.php?code=' + code)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.confirmed) {
+                        clearInterval(checkInterval);
+                        clearInterval(timerInterval);
+                        const statusText = document.getElementById('statusText');
+                        const statusDot = document.querySelector('.status-dot');
+                        if (statusText) {
+                            statusText.innerHTML = '✓ Payment confirmed! Your listing is now active.';
+                            statusText.classList.add('success-text');
+                        }
+                        if (statusDot) statusDot.style.background = '#10b981';
+                        document.getElementById('actionButtons').innerHTML = `
+                            <a href="listings.php" class="btn btn-primary" style="display: block; text-align: center; margin-top: 12px;">
+                                <i class="fas fa-check-circle"></i> View My Listings
+                            </a>
+                        `;
+                    }
+                });
+        }
+        
+        // Start checking payment status every 3 seconds
+        if (code) {
+            checkInterval = setInterval(checkPaymentStatus, 3000);
+            timerInterval = setInterval(updateTimer, 1000);
         }
     </script>
 </body>

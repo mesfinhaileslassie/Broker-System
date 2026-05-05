@@ -7,14 +7,14 @@ require_once '../../config/database.php';
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['user_logged_in']) || !$_SESSION['user_logged_in']) {
-    echo json_encode(['confirmed' => false, 'error' => 'Unauthorized']);
+    echo json_encode(['confirmed' => false]);
     exit;
 }
 
 $code = $_GET['code'] ?? '';
 
 if (!$code) {
-    echo json_encode(['confirmed' => false, 'error' => 'No code provided']);
+    echo json_encode(['confirmed' => false]);
     exit;
 }
 
