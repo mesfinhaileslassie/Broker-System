@@ -1,5 +1,5 @@
 <?php
-// user/api/get_messages.php - Get messages API
+// user/api/get_messages.php - Get messages with reactions
 
 session_start();
 require_once '../../config/database.php';
@@ -31,27 +31,21 @@ if (!$conv || ($conv['user_id'] != $user_id && $conv['broker_id'] != $user_id)) 
     exit;
 }
 
-// Get messages
-$stmt = $conn->prepare("
-    SELECT m.*, u.full_name as sender_name 
-    FROM messages m 
-    JOIN users u ON m.sender_id = u.id 
-    WHERE m.conversation_id = ? 
-    ORDER BY m.created_at ASC 
-    LIMIT 100
-");
-$stmt->bind_param("i", $conversation_id);
-$stmt->execute();
-$result = $stmt->get_result();
+// Get messages with delete filter
+$messages = getMessagesWithDeleteFilter($conn, $conversation_id, $user_id, 100, 0);
 
-$messages = [];
-while ($msg = $result->fetch_assoc()) {
-    $messages[] = [
+$result = [];
+foreach ($messages as $msg) {
+    $result[] = [
         'id' => $msg['id'],
         'sender_id' => $msg['sender_id'],
+        'receiver_id' => $msg['receiver_id'],
         'message' => $msg['message'],
         'time' => date('H:i', strtotime($msg['created_at'])),
-        'date' => date('Y-m-d H:i:s', strtotime($msg['created_at']))
+        'date' => date('Y-m-d H:i:s', strtotime($msg['created_at'])),
+        'reactions' => $msg['reactions'],
+        'my_reaction' => $msg['my_reaction'],
+        'can_delete' => ($msg['sender_id'] == $user_id || $msg['receiver_id'] == $user_id)
     ];
 }
 
@@ -59,6 +53,6 @@ $conn->close();
 
 echo json_encode([
     'success' => true,
-    'messages' => $messages
+    'messages' => $result
 ]);
 ?>

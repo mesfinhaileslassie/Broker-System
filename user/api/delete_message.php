@@ -1,5 +1,5 @@
 <?php
-// user/api/add_reaction.php - Add reaction to message
+// user/api/delete_message.php - Delete message
 
 session_start();
 require_once '../../config/database.php';
@@ -15,26 +15,18 @@ if (!isset($_SESSION['user_logged_in']) || !$_SESSION['user_logged_in']) {
 
 $input = json_decode(file_get_contents('php://input'), true);
 $message_id = $input['message_id'] ?? $_POST['message_id'] ?? 0;
-$reaction_type = $input['reaction_type'] ?? $_POST['reaction_type'] ?? '';
 
-if (!$message_id || !$reaction_type) {
-    echo json_encode(['success' => false, 'error' => 'Missing required fields']);
+if (!$message_id) {
+    echo json_encode(['success' => false, 'error' => 'Missing message ID']);
     exit;
 }
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
 
-$result = addReaction($conn, $message_id, $user_id, $reaction_type);
-
-// Get updated reactions
-$reactions = getMessageReactions($conn, $message_id);
+$result = deleteMessage($conn, $message_id, $user_id);
 
 $conn->close();
 
-echo json_encode([
-    'success' => true,
-    'reactions' => $reactions,
-    'message_id' => $message_id
-]);
+echo json_encode($result);
 ?>

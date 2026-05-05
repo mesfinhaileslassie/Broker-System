@@ -1,5 +1,5 @@
 <?php
-// admin/chat.php - Chat Interface for Admin (with real-time polling)
+// admin/chat.php - Chat Interface for Admin/Broker (UPDATED)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -29,7 +29,8 @@ if ($conversation_id > 0) {
     $current_conversation = getConversationById($conn, $conversation_id, $user_id);
     
     if ($current_conversation) {
-        $messages = getMessages($conn, $conversation_id, 100, 0);
+        // Use the new function with delete filter
+        $messages = getMessagesWithDeleteFilter($conn, $conversation_id, $user_id, 100, 0);
         markMessagesAsRead($conn, $conversation_id, $user_id);
     }
 }
@@ -88,12 +89,19 @@ $conn->close();
         .message-bubble { padding: 10px 14px; border-radius: 18px; position: relative; word-wrap: break-word; }
         .message.sent .message-bubble { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-bottom-right-radius: 4px; }
         .message.received .message-bubble { background: white; color: #1e293b; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-        .message-time { font-size: 9px; margin-top: 4px; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
+        .message-time { font-size: 9px; margin-top: 4px; opacity: 0.7; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+        .delete-msg-btn { background: none; border: none; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 10px; opacity: 0; transition: opacity 0.3s; }
+        .message.received .delete-msg-btn { color: #94a3b8; }
+        .message-bubble:hover .delete-msg-btn { opacity: 1; }
+        .delete-msg-btn:hover { color: #ef4444 !important; }
         
-        .message-reactions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-        .reaction-btn { background: none; border: none; cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 20px; transition: all 0.2s; }
-        .reaction-btn:hover { background: rgba(0,0,0,0.05); transform: scale(1.1); }
-        .reaction-count { font-size: 10px; color: #64748b; margin-left: 2px; }
+        .message-reactions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+        .reaction-btn { background: rgba(0,0,0,0.05); border: none; cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 20px; transition: all 0.2s; }
+        .message.sent .reaction-btn { background: rgba(255,255,255,0.2); color: white; }
+        .message.received .reaction-btn { background: #f1f5f9; color: #334155; }
+        .reaction-btn:hover { transform: scale(1.1); }
+        .reaction-btn.active { background: #667eea; color: white; }
+        .message.sent .reaction-btn.active { background: white; color: #667eea; }
         
         .chat-input-area { padding: 16px 20px; background: white; border-top: 1px solid #e9ecef; display: flex; align-items: center; gap: 12px; }
         .chat-input { flex: 1; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 24px; font-size: 14px; resize: none; font-family: inherit; max-height: 100px; }
@@ -179,32 +187,27 @@ $conn->close();
                 </div>
 
                 <div class="messages-area" id="messagesArea">
-                    <?php 
-                    // Display messages in correct order (oldest first)
-                    $messages_ordered = $messages;
-                    foreach($messages_ordered as $msg): 
-                        $reaction_counts = [];
-                        if (isset($msg['reactions']) && is_array($msg['reactions'])) {
-                            $reaction_counts = $msg['reactions'];
-                        } elseif (isset($msg['reactions']) && is_string($msg['reactions'])) {
-                            $reaction_counts = json_decode($msg['reactions'], true) ?: [];
-                        }
-                        $total_reactions = array_sum($reaction_counts);
-                    ?>
-                        <div class="message <?php echo $msg['sender_id'] == $user_id ? 'sent' : 'received'; ?>" data-msg-id="<?php echo $msg['id']; ?>">
+                    <?php foreach($messages as $msg): ?>
+                        <?php
+                        $isSent = ($msg['sender_id'] == $user_id);
+                        $reactionTypes = ['like' => '👍', 'dislike' => '👎', 'love' => '❤️', 'laugh' => '😂'];
+                        ?>
+                        <div class="message <?php echo $isSent ? 'sent' : 'received'; ?>" data-msg-id="<?php echo $msg['id']; ?>">
                             <div class="message-bubble">
-                                <?php echo nl2br(htmlspecialchars($msg['message'])); ?>
+                                <div class="message-text"><?php echo nl2br(htmlspecialchars($msg['message'])); ?></div>
                                 <div class="message-time">
                                     <?php echo date('H:i', strtotime($msg['created_at'])); ?>
+                                    <button class="delete-msg-btn" onclick="deleteMessage(<?php echo $msg['id']; ?>)" title="Delete message">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
                                 </div>
-                                <div class="message-reactions" id="reactions-<?php echo $msg['id']; ?>">
-                                    <button class="reaction-btn" onclick="addReaction(<?php echo $msg['id']; ?>, 'like')">👍</button>
-                                    <button class="reaction-btn" onclick="addReaction(<?php echo $msg['id']; ?>, 'dislike')">👎</button>
-                                    <button class="reaction-btn" onclick="addReaction(<?php echo $msg['id']; ?>, 'love')">❤️</button>
-                                    <button class="reaction-btn" onclick="addReaction(<?php echo $msg['id']; ?>, 'laugh')">😂</button>
-                                    <span class="reaction-count" id="reaction-count-<?php echo $msg['id']; ?>">
-                                        <?php echo $total_reactions > 0 ? $total_reactions : ''; ?>
-                                    </span>
+                                <div class="message-reactions">
+                                    <?php foreach($reactionTypes as $type => $emoji): ?>
+                                        <?php $count = $msg['reactions'][$type] ?? 0; ?>
+                                        <button class="reaction-btn <?php echo ($msg['my_reaction'] == $type) ? 'active' : ''; ?>" onclick="addReaction(<?php echo $msg['id']; ?>, '<?php echo $type; ?>')">
+                                            <?php echo $emoji; ?> <?php echo $count > 0 ? $count : ''; ?>
+                                        </button>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>
@@ -255,9 +258,7 @@ $conn->close();
     <script>
         let conversationId = <?php echo $conversation_id; ?>;
         let userId = <?php echo $user_id; ?>;
-        let typingTimeout;
         let pollInterval;
-        let lastMessageId = 0;
 
         function scrollToBottom() {
             const messagesArea = document.getElementById('messagesArea');
@@ -320,28 +321,8 @@ $conn->close();
                         
                         if (newMessages.length > 0) {
                             newMessages.forEach(msg => {
-                                const isSent = msg.sender_id == userId;
-                                const messageDiv = document.createElement('div');
-                                messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
-                                messageDiv.setAttribute('data-msg-id', msg.id);
-                                messageDiv.innerHTML = `
-                                    <div class="message-bubble">
-                                        ${escapeHtml(msg.message)}
-                                        <div class="message-time">
-                                            ${msg.time}
-                                        </div>
-                                        <div class="message-reactions" id="reactions-${msg.id}">
-                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'like')">👍</button>
-                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'dislike')">👎</button>
-                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'love')">❤️</button>
-                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'laugh')">😂</button>
-                                            <span class="reaction-count" id="reaction-count-${msg.id}"></span>
-                                        </div>
-                                    </div>
-                                `;
-                                messagesArea.appendChild(messageDiv);
+                                appendMessage(msg);
                             });
-                            
                             scrollToBottom();
                             $.post('../user/api/mark_read.php', { conversation_id: conversationId });
                             updateConversationList();
@@ -349,6 +330,38 @@ $conn->close();
                     }
                 }
             });
+        }
+
+        function appendMessage(msg) {
+            const messagesArea = document.getElementById('messagesArea');
+            const isSent = msg.sender_id == userId;
+            const reactionTypes = { 'like': '👍', 'dislike': '👎', 'love': '❤️', 'laugh': '😂' };
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+            messageDiv.setAttribute('data-msg-id', msg.id);
+            
+            let reactionsHtml = '<div class="message-reactions">';
+            for (const [type, emoji] of Object.entries(reactionTypes)) {
+                const count = msg.reactions[type] || 0;
+                const isActive = (msg.my_reaction === type);
+                reactionsHtml += `<button class="reaction-btn ${isActive ? 'active' : ''}" onclick="addReaction(${msg.id}, '${type}')">${emoji} ${count > 0 ? count : ''}</button>`;
+            }
+            reactionsHtml += '</div>';
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="message-text">${escapeHtml(msg.message)}</div>
+                    <div class="message-time">
+                        ${msg.time}
+                        <button class="delete-msg-btn" onclick="deleteMessage(${msg.id})" title="Delete message">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                    ${reactionsHtml}
+                </div>
+            `;
+            messagesArea.appendChild(messageDiv);
         }
 
         function addReaction(messageId, type) {
@@ -362,6 +375,23 @@ $conn->close();
                     }
                 }
             });
+        }
+
+        function deleteMessage(messageId) {
+            if (confirm('Delete this message? It will be removed from your chat history.')) {
+                $.ajax({
+                    url: '../user/api/delete_message.php',
+                    method: 'POST',
+                    data: { message_id: messageId },
+                    success: function(response) {
+                        if (response.success) {
+                            $(`.message[data-msg-id="${messageId}"]`).remove();
+                        } else {
+                            alert('Failed to delete message');
+                        }
+                    }
+                });
+            }
         }
 
         function updateConversationList() {

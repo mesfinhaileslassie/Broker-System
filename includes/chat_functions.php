@@ -1,5 +1,5 @@
 <?php
-// includes/chat_functions.php - Chat system helper functions (COMPLETELY FIXED)
+// includes/chat_functions.php - Complete chat system functions
 
 require_once __DIR__ . '/../config/database.php';
 
@@ -67,72 +67,78 @@ function sendMessage($conn, $conversation_id, $sender_id, $receiver_id, $message
     return $message_id;
 }
 
-function getMessages($conn, $conversation_id, $limit = 50, $offset = 0) {
-    $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
-    
-    // First, verify the conversation exists
-    $check = $conn->prepare("SELECT id FROM conversations WHERE id = ?");
-    $check->bind_param("i", $conversation_id);
-    $check->execute();
-    if ($check->get_result()->num_rows == 0) {
-        return [];
-    }
-    
+function getMessagesWithDeleteFilter($conn, $conversation_id, $user_id, $limit = 50, $offset = 0) {
     $stmt = $conn->prepare("
         SELECT m.*, u.full_name as sender_name, u.role as sender_role
         FROM messages m
         JOIN users u ON m.sender_id = u.id
-        WHERE m.conversation_id = ?
+        WHERE m.conversation_id = ? 
+        AND NOT (m.deleted_by_sender = 1 AND m.sender_id = ?)
+        AND NOT (m.deleted_by_receiver = 1 AND m.receiver_id = ?)
         ORDER BY m.created_at ASC
         LIMIT ? OFFSET ?
     ");
-    $stmt->bind_param("iii", $conversation_id, $limit, $offset);
+    $stmt->bind_param("iiiii", $conversation_id, $user_id, $user_id, $limit, $offset);
     $stmt->execute();
     $result = $stmt->get_result();
     
     $messages = [];
     while ($row = $result->fetch_assoc()) {
         // Get reactions for this message
-        $reactions = [];
-        $reaction_query = $conn->prepare("SELECT reaction_type, COUNT(*) as count FROM message_reactions WHERE message_id = ? GROUP BY reaction_type");
-        $reaction_query->bind_param("i", $row['id']);
-        $reaction_query->execute();
-        $reaction_result = $reaction_query->get_result();
-        while ($react = $reaction_result->fetch_assoc()) {
-            $reactions[$react['reaction_type']] = $react['count'];
-        }
+        $reactions = getMessageReactions($conn, $row['id']);
         
-        // Get my reaction if any
-        if ($user_id > 0) {
-            $my_reaction_query = $conn->prepare("SELECT reaction_type FROM message_reactions WHERE message_id = ? AND user_id = ?");
-            $my_reaction_query->bind_param("ii", $row['id'], $user_id);
-            $my_reaction_query->execute();
-            $my_reaction_result = $my_reaction_query->get_result();
-            $row['my_reaction'] = $my_reaction_result->num_rows > 0 ? $my_reaction_result->fetch_assoc()['reaction_type'] : null;
-        } else {
-            $row['my_reaction'] = null;
+        // Get user's own reaction
+        $my_reaction = null;
+        $reaction_check = $conn->prepare("SELECT reaction_type FROM message_reactions WHERE message_id = ? AND user_id = ?");
+        $reaction_check->bind_param("ii", $row['id'], $user_id);
+        $reaction_check->execute();
+        $reaction_result = $reaction_check->get_result();
+        if ($reaction_result->num_rows > 0) {
+            $my_reaction = $reaction_result->fetch_assoc()['reaction_type'];
         }
         
         $row['reactions'] = $reactions;
+        $row['my_reaction'] = $my_reaction;
         $messages[] = $row;
     }
     
     return $messages;
 }
 
-function markMessagesAsRead($conn, $conversation_id, $user_id) {
-    $user_role = getUserRole($conn, $user_id);
+function getMessageReactions($conn, $message_id) {
+    $reactions = $conn->prepare("
+        SELECT reaction_type, COUNT(*) as count
+        FROM message_reactions 
+        WHERE message_id = ? 
+        GROUP BY reaction_type
+    ");
+    $reactions->bind_param("i", $message_id);
+    $reactions->execute();
+    $result = $reactions->get_result();
     
-    if ($user_role == 'admin' || $user_role == 'broker') {
-        $conn->query("UPDATE conversations SET broker_unread_count = 0 WHERE id = $conversation_id");
-    } else {
-        $conn->query("UPDATE conversations SET user_unread_count = 0 WHERE id = $conversation_id");
+    $reaction_data = [];
+    while($row = $result->fetch_assoc()) {
+        $reaction_data[$row['reaction_type']] = $row['count'];
     }
-    
-    $conn->query("UPDATE messages SET is_read = 1, read_at = NOW() WHERE conversation_id = $conversation_id AND receiver_id = $user_id AND is_read = 0");
+    return $reaction_data;
 }
 
 function addReaction($conn, $message_id, $user_id, $reaction_type) {
+    // First, get the message to verify user has access
+    $msg_check = $conn->prepare("
+        SELECT m.*, c.user_id, c.broker_id 
+        FROM messages m 
+        JOIN conversations c ON m.conversation_id = c.id 
+        WHERE m.id = ?
+    ");
+    $msg_check->bind_param("i", $message_id);
+    $msg_check->execute();
+    $message = $msg_check->get_result()->fetch_assoc();
+    
+    if (!$message || ($message['user_id'] != $user_id && $message['broker_id'] != $user_id)) {
+        return false;
+    }
+    
     // Check if reaction exists
     $check = $conn->prepare("SELECT id FROM message_reactions WHERE message_id = ? AND user_id = ?");
     $check->bind_param("ii", $message_id, $user_id);
@@ -152,6 +158,60 @@ function addReaction($conn, $message_id, $user_id, $reaction_type) {
     }
     
     return true;
+}
+
+function deleteMessage($conn, $message_id, $user_id) {
+    // Get message details
+    $msg = $conn->prepare("
+        SELECT m.*, c.user_id, c.broker_id 
+        FROM messages m 
+        JOIN conversations c ON m.conversation_id = c.id 
+        WHERE m.id = ?
+    ");
+    $msg->bind_param("i", $message_id);
+    $msg->execute();
+    $message = $msg->get_result()->fetch_assoc();
+    
+    if (!$message) {
+        return ['success' => false, 'error' => 'Message not found'];
+    }
+    
+    // Determine if user is sender or receiver
+    $is_sender = ($message['sender_id'] == $user_id);
+    $is_receiver = ($message['receiver_id'] == $user_id);
+    
+    if (!$is_sender && !$is_receiver) {
+        return ['success' => false, 'error' => 'Unauthorized'];
+    }
+    
+    if ($is_sender) {
+        // Delete for sender only
+        $conn->query("UPDATE messages SET deleted_by_sender = 1, deleted_at = NOW() WHERE id = $message_id");
+    } else {
+        // Delete for receiver only
+        $conn->query("UPDATE messages SET deleted_by_receiver = 1, deleted_at = NOW() WHERE id = $message_id");
+    }
+    
+    // Check if both have deleted, then hard delete
+    $check = $conn->query("SELECT deleted_by_sender, deleted_by_receiver FROM messages WHERE id = $message_id")->fetch_assoc();
+    if ($check['deleted_by_sender'] && $check['deleted_by_receiver']) {
+        $conn->query("DELETE FROM messages WHERE id = $message_id");
+        $conn->query("DELETE FROM message_reactions WHERE message_id = $message_id");
+    }
+    
+    return ['success' => true];
+}
+
+function markMessagesAsRead($conn, $conversation_id, $user_id) {
+    $user_role = getUserRole($conn, $user_id);
+    
+    if ($user_role == 'admin' || $user_role == 'broker') {
+        $conn->query("UPDATE conversations SET broker_unread_count = 0 WHERE id = $conversation_id");
+    } else {
+        $conn->query("UPDATE conversations SET user_unread_count = 0 WHERE id = $conversation_id");
+    }
+    
+    $conn->query("UPDATE messages SET is_read = 1, read_at = NOW() WHERE conversation_id = $conversation_id AND receiver_id = $user_id AND is_read = 0");
 }
 
 function getUserConversations($conn, $user_id) {
