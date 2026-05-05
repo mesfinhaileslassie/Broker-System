@@ -1,7 +1,6 @@
 <?php
-// includes/auth.php - Complete user and admin authentication (FIXED - no duplicate session)
+// includes/auth.php - Fixed authentication functions
 
-// Only start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -21,14 +20,6 @@ function requireLogin() {
     if (!isLoggedIn()) {
         $_SESSION['redirect_after_login'] = $_SERVER['REQUEST_URI'];
         header('Location: /broker_system/auth/login.php');
-        exit;
-    }
-}
-
-function requireRole($role) {
-    requireLogin();
-    if ($_SESSION['user_role'] !== $role) {
-        header('Location: /broker_system/user/dashboard.php');
         exit;
     }
 }
@@ -61,13 +52,21 @@ function userLogin($userId, $fullName, $email, $role, $balance) {
 }
 
 function userLogout() {
+    $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
     session_destroy();
     header('Location: /broker_system/auth/login.php');
     exit;
 }
 
 // ============================================
-// ADMIN AUTHENTICATION FUNCTIONS
+// ADMIN AUTHENTICATION (Deprecated - use unified)
 // ============================================
 
 function isAdminLoggedIn() {
@@ -76,21 +75,14 @@ function isAdminLoggedIn() {
 
 function requireAdminLogin() {
     if (!isAdminLoggedIn()) {
-        header('Location: /broker_system/admin/login.php');
+        header('Location: /broker_system/auth/login.php');
         exit;
     }
 }
 
-function adminLogin($adminId, $fullName, $email) {
-    $_SESSION['admin_logged_in'] = true;
-    $_SESSION['admin_id'] = $adminId;
-    $_SESSION['admin_name'] = $fullName;
-    $_SESSION['admin_email'] = $email;
-}
-
 function adminLogout() {
     session_destroy();
-    header('Location: /broker_system/admin/login.php');
+    header('Location: /broker_system/auth/login.php');
     exit;
 }
 ?>

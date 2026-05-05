@@ -1,7 +1,8 @@
 <?php
-// auth/logout.php - User logout
+// auth/logout.php - Unified Logout
 
 session_start();
 session_destroy();
-header('Location: /broker_system/index.php');
+header('Location: login.php');
 exit;
+?>

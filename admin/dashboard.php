@@ -1,9 +1,11 @@
 <?php
-// admin/dashboard.php - Modern Admin Dashboard
+// admin/dashboard.php - Modern Admin Dashboard (Unified Session)
 
-session_start();
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php');
+require_once '../includes/auth.php';
+
+// Check if logged in and is admin using unified session
+if (!isLoggedIn() || $_SESSION['user_role'] != 'admin') {
+    header('Location: /broker_system/auth/login.php');
     exit;
 }
 
@@ -11,7 +13,7 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 
 $conn = getDbConnection();
-$admin_name = $_SESSION['admin_name'] ?? 'Admin';
+$admin_name = $_SESSION['user_name'];
 
 // Get statistics
 $stats = [
@@ -283,7 +285,6 @@ $conn->close();
 
         .logout-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(239,68,68,0.3);
         }
 
         .container {
@@ -446,33 +447,16 @@ $conn->close();
 
         .btn-primary { background: #667eea; color: white; }
 
-        /* Responsive */
         @media (max-width: 1024px) {
-            .sidebar {
-                width: 80px;
-            }
-            .sidebar .logo-text,
-            .sidebar .menu-label,
-            .sidebar .profile-name,
-            .sidebar .profile-email {
-                display: none;
-            }
-            .sidebar .menu-item {
-                justify-content: center;
-                padding: 12px;
-            }
-            .sidebar .menu-item i {
-                margin-right: 0;
-            }
-            .main-content {
-                margin-left: 80px;
-            }
+            .sidebar { width: 80px; }
+            .sidebar .logo-text, .sidebar .menu-label, .sidebar .profile-name, .sidebar .profile-email { display: none; }
+            .sidebar .menu-item { justify-content: center; padding: 12px; }
+            .sidebar .menu-item i { margin-right: 0; }
+            .main-content { margin-left: 80px; }
         }
 
         @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
@@ -528,7 +512,7 @@ $conn->close();
                     <div class="profile-email">Administrator</div>
                 </div>
             </div>
-            <a href="logout.php" class="menu-item" style="margin-top: 8px;">
+            <a href="../auth/logout.php" class="menu-item" style="margin-top: 8px;">
                 <i class="fas fa-sign-out-alt logout-icon"></i>
                 <span class="menu-label">Logout</span>
             </a>
@@ -541,7 +525,7 @@ $conn->close();
             <h1 class="page-title">Dashboard</h1>
             <div class="admin-info">
                 <span><i class="fas fa-user-shield"></i> <?php echo htmlspecialchars($admin_name); ?></span>
-                <a href="logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                <a href="../auth/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
             </div>
         </div>
 
@@ -639,7 +623,7 @@ $conn->close();
                     </div>
                     <div class="table-wrapper">
                         <?php if ($pendingListings->num_rows > 0): ?>
-                            <table>
+                            </table>
                                 <thead>
                                     <tr><th>Title</th><th>Seller</th><th>Price</th><th></th>
                                 </thead>
@@ -668,7 +652,7 @@ $conn->close();
                     </div>
                     <div class="table-wrapper">
                         <?php if ($recentUsers->num_rows > 0): ?>
-                            <table>
+                            <tr>
                                 <thead>
                                     <tr><th>Name</th><th>Email</th><th>Joined</th><th></th>
                                 </thead>
@@ -693,7 +677,6 @@ $conn->close();
     </div>
 
     <script>
-        // Sidebar Collapse Toggle
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const collapseBtn = document.getElementById('collapseBtn');
@@ -716,7 +699,6 @@ $conn->close();
             });
         }
 
-        // Load saved sidebar state
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             sidebar.classList.add('collapsed');
             mainContent.classList.add('expanded');
