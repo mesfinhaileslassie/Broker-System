@@ -23,13 +23,12 @@ $user_id = $_SESSION['user_id'];
 $pending_legal = $conn->query("
     SELECT t.id, l.title, t.total_amount,
            CASE WHEN t.buyer_id = $user_id THEN 'buyer' ELSE 'seller' END as my_role,
-           t.buyer_legal_confirmed, t.seller_legal_confirmed
+           t.buyer_legal_confirmed, t.seller_legal_confirmed,
+           t.status
     FROM transactions t
     JOIN listings l ON t.listing_id = l.id
     WHERE (t.buyer_id = $user_id OR t.seller_id = $user_id)
     AND t.status = 'deposits_complete'
-    AND ((t.buyer_legal_confirmed = 0 AND t.buyer_id = $user_id) OR
-         (t.seller_legal_confirmed = 0 AND t.seller_id = $user_id))
 ");
 
 $conn->close();
@@ -45,6 +44,11 @@ $conn->close();
         font-weight: 700;
         color: #0f172a;
         margin-bottom: 8px;
+    }
+    
+    .page-header p {
+        color: #64748b;
+        font-size: 14px;
     }
     
     .legal-card {
@@ -101,6 +105,8 @@ $conn->close();
         font-weight: 500;
         display: inline-block;
         transition: all 0.3s;
+        border: none;
+        cursor: pointer;
     }
     
     .btn-primary {
@@ -111,19 +117,6 @@ $conn->close();
     .btn-primary:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-    }
-    
-    .empty-state {
-        text-align: center;
-        padding: 60px;
-        background: white;
-        border-radius: 20px;
-    }
-    
-    .empty-state i {
-        font-size: 64px;
-        color: #cbd5e1;
-        margin-bottom: 16px;
     }
     
     .badge {
@@ -142,7 +135,42 @@ $conn->close();
         background: #fed7aa;
         color: #ea580c;
     }
-</style>
+    
+    .badge-info {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 60px;
+        background: white;
+        border-radius: 20px;
+    }
+    
+    .empty-state i {
+        font-size: 64px;
+        color: #cbd5e1;
+        margin-bottom: 16px;
+    }
+    
+    .empty-state h3 {
+        font-size: 20px;
+        color: #334155;
+        margin-bottom: 8px;
+    }
+    
+    .btn-success {
+        background: #10b981;
+        color: white;
+    }
+    
+    @media (max-width: 768px) {
+        .legal-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    </style>
 
 <div class="page-header">
     <h1>Legal Process</h1>
@@ -150,7 +178,10 @@ $conn->close();
 </div>
 
 <?php if ($pending_legal && $pending_legal->num_rows > 0): ?>
-    <?php while($legal = $pending_legal->fetch_assoc()): ?>
+    <?php while($legal = $pending_legal->fetch_assoc()): 
+        $my_confirmed = ($legal['my_role'] == 'buyer') ? $legal['buyer_legal_confirmed'] : $legal['seller_legal_confirmed'];
+        $other_confirmed = ($legal['my_role'] == 'buyer') ? $legal['seller_legal_confirmed'] : $legal['buyer_legal_confirmed'];
+    ?>
         <div class="legal-card">
             <div class="legal-header">
                 <div class="legal-title">Transaction #<?php echo $legal['id']; ?> - <?php echo htmlspecialchars($legal['title']); ?></div>
@@ -164,27 +195,21 @@ $conn->close();
             <div class="status-row">
                 <span><i class="fas fa-gavel"></i> Your Legal Status:</span>
                 <span>
-                    <?php 
-                    $my_confirmed = ($legal['my_role'] == 'buyer') ? $legal['buyer_legal_confirmed'] : $legal['seller_legal_confirmed'];
-                    if ($my_confirmed):
-                        echo '<span class="badge badge-success">✓ Confirmed</span>';
-                    else:
-                        echo '<span class="badge badge-warning">⏳ Pending</span>';
-                    endif;
-                    ?>
+                    <?php if ($my_confirmed): ?>
+                        <span class="badge badge-success">✓ Confirmed</span>
+                    <?php else: ?>
+                        <span class="badge badge-warning">⏳ Pending</span>
+                    <?php endif; ?>
                 </span>
             </div>
             <div class="status-row">
                 <span><i class="fas fa-store"></i> Other Party Status:</span>
                 <span>
-                    <?php 
-                    $other_confirmed = ($legal['my_role'] == 'buyer') ? $legal['seller_legal_confirmed'] : $legal['buyer_legal_confirmed'];
-                    if ($other_confirmed):
-                        echo '<span class="badge badge-success">✓ Confirmed</span>';
-                    else:
-                        echo '<span class="badge badge-warning">⏳ Pending</span>';
-                    endif;
-                    ?>
+                    <?php if ($other_confirmed): ?>
+                        <span class="badge badge-success">✓ Confirmed</span>
+                    <?php else: ?>
+                        <span class="badge badge-warning">⏳ Pending</span>
+                    <?php endif; ?>
                 </span>
             </div>
             
@@ -194,6 +219,21 @@ $conn->close();
                         <i class="fas fa-file-signature"></i> Complete Legal Process
                     </a>
                 </div>
+            <?php else: ?>
+                <div style="margin-top: 20px;">
+                    <span class="badge badge-success" style="background: #d1fae5; color: #059669; padding: 8px 16px;">
+                        <i class="fas fa-check-circle"></i> You have completed the legal process
+                    </span>
+                    <?php if (!$other_confirmed): ?>
+                        <p style="margin-top: 12px; font-size: 13px; color: #64748b;">
+                            Waiting for the other party to complete their legal confirmation.
+                        </p>
+                    <?php else: ?>
+                        <a href="transaction.php?id=<?php echo $legal['id']; ?>" class="btn btn-success" style="margin-top: 12px;">
+                            <i class="fas fa-truck"></i> Proceed to Delivery Confirmation
+                        </a>
+                    <?php endif; ?>
+                </div>
             <?php endif; ?>
         </div>
     <?php endwhile; ?>
@@ -201,7 +241,7 @@ $conn->close();
     <div class="empty-state">
         <i class="fas fa-check-circle"></i>
         <h3>No pending legal processes</h3>
-        <p>All your transactions have completed legal confirmation.</p>
+        <p>All your transactions have completed legal confirmation or are awaiting deposits.</p>
         <a href="dashboard.php" class="btn btn-primary" style="margin-top: 16px;">Go to Dashboard</a>
     </div>
 <?php endif; ?>

@@ -1,5 +1,5 @@
 <?php
-// user/post_listing.php - Post new listing (CLEAN VERSION without duplicate header)
+// user/post_listing.php - Post listings for Houses, Cars, Jobs
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -33,6 +33,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $location = trim($_POST['location']);
     $user_id = $_SESSION['user_id'];
     
+    // Additional fields based on type
+    $bedrooms = isset($_POST['bedrooms']) ? intval($_POST['bedrooms']) : null;
+    $bathrooms = isset($_POST['bathrooms']) ? intval($_POST['bathrooms']) : null;
+    $area = isset($_POST['area']) ? floatval($_POST['area']) : null;
+    $year = isset($_POST['year']) ? intval($_POST['year']) : null;
+    $mileage = isset($_POST['mileage']) ? intval($_POST['mileage']) : null;
+    $fuel_type = isset($_POST['fuel_type']) ? $_POST['fuel_type'] : null;
+    $transmission = isset($_POST['transmission']) ? $_POST['transmission'] : null;
+    $requirements = isset($_POST['requirements']) ? trim($_POST['requirements']) : null;
+    $employment_type = isset($_POST['employment_type']) ? $_POST['employment_type'] : null;
+    
     // Handle cover image
     $cover_image = '';
     if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
@@ -65,18 +76,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     $gallery_json = !empty($gallery_images) ? json_encode($gallery_images) : null;
     
+    // Build additional details JSON
+    $additional_details = [];
+    if ($type == 'rental') {
+        $additional_details['bedrooms'] = $bedrooms;
+        $additional_details['bathrooms'] = $bathrooms;
+        $additional_details['area'] = $area;
+    } elseif ($type == 'product') {
+        $additional_details['year'] = $year;
+        $additional_details['mileage'] = $mileage;
+        $additional_details['fuel_type'] = $fuel_type;
+        $additional_details['transmission'] = $transmission;
+    } elseif ($type == 'job') {
+        $additional_details['requirements'] = $requirements;
+        $additional_details['employment_type'] = $employment_type;
+    }
+    
+    $additional_json = !empty($additional_details) ? json_encode($additional_details) : null;
+    
     if (empty($title) || empty($description) || $price <= 0) {
         $error = 'Please fill in all required fields';
     } elseif (empty($cover_image)) {
         $error = 'Please upload a cover image';
     } else {
         // Insert listing with pending approval
-        $stmt = $conn->prepare("INSERT INTO listings (seller_id, type, title, description, price, category_id, location, cover_image, gallery_images, approval_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending')");
-        $stmt->bind_param("isssdissi", $user_id, $type, $title, $description, $price, $category_id, $location, $cover_image, $gallery_json);
+        $stmt = $conn->prepare("INSERT INTO listings (seller_id, type, title, description, price, category_id, location, cover_image, gallery_images, additional_details, approval_status, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending')");
+        $stmt->bind_param("isssdissss", $user_id, $type, $title, $description, $price, $category_id, $location, $cover_image, $gallery_json, $additional_json);
         
         if ($stmt->execute()) {
             $listing_id = $conn->insert_id;
-            
             $success = "Listing submitted for admin approval. You will be notified once approved.";
             header("Refresh: 3; URL=listings.php");
         } else {
@@ -89,16 +117,13 @@ $conn->close();
 ?>
 
 <style>
-    .post-form {
-        max-width: 800px;
-        margin: 0 auto;
-    }
+    .post-form { max-width: 900px; margin: 0 auto; }
     
     .card {
         background: white;
-        border-radius: 24px;
+        border-radius: 28px;
         padding: 32px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        box-shadow: 0 20px 35px -10px rgba(0,0,0,0.1);
     }
     
     .card h1 {
@@ -125,6 +150,10 @@ $conn->close();
         font-weight: 600;
         color: #1e293b;
         font-size: 14px;
+    }
+    
+    label .required {
+        color: #ef4444;
     }
     
     input, select, textarea {
@@ -175,19 +204,32 @@ $conn->close();
     }
     
     .type-option i {
-        font-size: 32px;
-        margin-bottom: 8px;
+        font-size: 36px;
+        margin-bottom: 12px;
         display: block;
     }
     
     .type-option strong {
         display: block;
         margin-bottom: 4px;
+        font-size: 16px;
     }
     
     .type-option small {
         font-size: 11px;
         color: #64748b;
+    }
+    
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    
+    .form-row-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
     }
     
     .image-preview {
@@ -280,9 +322,18 @@ $conn->close();
         font-size: 13px;
     }
     
+    .dynamic-fields {
+        display: none;
+    }
+    
+    .dynamic-fields.active {
+        display: block;
+    }
+    
     @media (max-width: 640px) {
         .card { padding: 20px; }
         .type-selector { flex-direction: column; }
+        .form-row, .form-row-3 { grid-template-columns: 1fr; }
         .preview-item { width: 80px; height: 80px; }
     }
 </style>
@@ -302,32 +353,32 @@ $conn->close();
         
         <form method="POST" enctype="multipart/form-data">
             <div class="type-selector" id="typeSelector">
+                <div class="type-option" data-type="rental" onclick="selectType('rental')">
+                    <i class="fas fa-home"></i>
+                    <strong>House/Property</strong>
+                    <small>Apartment, Condominium, Villa, Land</small>
+                </div>
                 <div class="type-option" data-type="product" onclick="selectType('product')">
-                    <i class="fas fa-box"></i>
-                    <strong>Product</strong>
-                    <small>Physical or digital items</small>
+                    <i class="fas fa-car"></i>
+                    <strong>Car/Vehicle</strong>
+                    <small>Sell your car</small>
                 </div>
                 <div class="type-option" data-type="job" onclick="selectType('job')">
                     <i class="fas fa-briefcase"></i>
-                    <strong>Job</strong>
-                    <small>Hire or find work</small>
-                </div>
-                <div class="type-option" data-type="rental" onclick="selectType('rental')">
-                    <i class="fas fa-home"></i>
-                    <strong>Rental</strong>
-                    <small>Rent items or property</small>
+                    <strong>Job Opportunity</strong>
+                    <small>Hire employees</small>
                 </div>
             </div>
-            <input type="hidden" name="type" id="listingType" value="product" required>
+            <input type="hidden" name="type" id="listingType" value="rental" required>
             
             <div class="form-group">
                 <label>Title *</label>
-                <input type="text" name="title" required placeholder="e.g., iPhone 14 Pro, Web Developer Needed, 2BR Apartment">
+                <input type="text" name="title" required placeholder="e.g., Modern 2BR Apartment for Rent, 2020 Toyota Camry, Senior Web Developer Needed">
             </div>
             
             <div class="form-group">
                 <label>Category *</label>
-                <select name="category_id" required>
+                <select name="category_id" id="categorySelect" required>
                     <option value="">Select category</option>
                     <?php 
                     $currentType = '';
@@ -335,7 +386,8 @@ $conn->close();
                         if ($currentType != $cat['type']): 
                             if ($currentType != ''): echo '</optgroup>'; endif;
                             $currentType = $cat['type'];
-                            echo '<optgroup label="' . ucfirst($currentType) . '">';
+                            $typeLabel = $currentType == 'rental' ? '🏠 Properties' : ($currentType == 'product' ? '🚗 Cars' : '💼 Jobs');
+                            echo '<optgroup label="' . $typeLabel . '">';
                         endif;
                     ?>
                         <option value="<?php echo $cat['id']; ?>" data-type="<?php echo $cat['type']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
@@ -344,33 +396,110 @@ $conn->close();
                 </select>
             </div>
             
+            <!-- Property Fields (Houses) -->
+            <div id="propertyFields" class="dynamic-fields">
+                <div class="form-row-3">
+                    <div class="form-group">
+                        <label>Bedrooms</label>
+                        <input type="number" name="bedrooms" min="0" placeholder="Number of bedrooms">
+                    </div>
+                    <div class="form-group">
+                        <label>Bathrooms</label>
+                        <input type="number" name="bathrooms" min="0" placeholder="Number of bathrooms">
+                    </div>
+                    <div class="form-group">
+                        <label>Area (sqm)</label>
+                        <input type="number" name="area" step="1" placeholder="Size in square meters">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Car Fields -->
+            <div id="carFields" class="dynamic-fields">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Year</label>
+                        <input type="number" name="year" min="1980" max="2025" placeholder="Manufacturing year">
+                    </div>
+                    <div class="form-group">
+                        <label>Mileage (km)</label>
+                        <input type="number" name="mileage" step="1" placeholder="Kilometers driven">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Fuel Type</label>
+                        <select name="fuel_type">
+                            <option value="">Select fuel type</option>
+                            <option value="Petrol">Petrol</option>
+                            <option value="Diesel">Diesel</option>
+                            <option value="Electric">Electric</option>
+                            <option value="Hybrid">Hybrid</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Transmission</label>
+                        <select name="transmission">
+                            <option value="">Select transmission</option>
+                            <option value="Manual">Manual</option>
+                            <option value="Automatic">Automatic</option>
+                            <option value="Semi-Automatic">Semi-Automatic</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Job Fields -->
+            <div id="jobFields" class="dynamic-fields">
+                <div class="form-group">
+                    <label>Employment Type</label>
+                    <select name="employment_type">
+                        <option value="">Select employment type</option>
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contract">Contract</option>
+                        <option value="Remote">Remote</option>
+                        <option value="Internship">Internship</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Requirements for Applicants</label>
+                    <textarea name="requirements" rows="4" placeholder="List requirements for applicants:
+• Required qualifications
+• Experience needed
+• Skills required
+• Benefits offered"></textarea>
+                </div>
+            </div>
+            
             <div class="form-group">
                 <label>Description *</label>
-                <textarea name="description" required placeholder="Describe your item, job requirements, or rental property in detail..."></textarea>
+                <textarea name="description" required placeholder="Describe your property, car, or job opportunity in detail..."></textarea>
             </div>
             
-            <div class="form-group">
-                <label>Price (ETB) *</label>
-                <input type="number" name="price" step="0.01" min="1" required placeholder="0.00">
-                <div class="info-text">Admin will set deposit and commission percentages for this listing</div>
-            </div>
-            
-            <div class="form-group">
-                <label>Location</label>
-                <input type="text" name="location" placeholder="e.g., Addis Ababa, Bole">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Price (ETB) *</label>
+                    <input type="number" name="price" step="0.01" min="1" required placeholder="0.00">
+                    <div class="info-text">For properties: monthly rent or sale price | For cars: selling price | For jobs: monthly salary</div>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" name="location" placeholder="e.g., Addis Ababa, Bole, Addis Ketema">
+                </div>
             </div>
             
             <div class="form-group">
                 <label>Cover Image *</label>
                 <input type="file" name="cover_image" accept="image/*" required onchange="previewCoverImage(this)">
-                <div class="info-text">This will be the main image displayed (max 5MB)</div>
+                <div class="info-text">Main image displayed in listings (max 5MB)</div>
                 <div id="coverPreview" class="image-preview"></div>
             </div>
             
             <div class="form-group">
                 <label>Gallery Images (Optional)</label>
                 <input type="file" name="gallery_images[]" accept="image/*" multiple onchange="previewGalleryImages(this)">
-                <div class="info-text">You can select multiple images (max 5MB each)</div>
+                <div class="info-text">Additional images (max 5MB each)</div>
                 <div id="galleryPreview" class="image-preview"></div>
             </div>
             
@@ -378,7 +507,7 @@ $conn->close();
         </form>
         
         <div class="approval-note">
-            <i class="fas fa-clock"></i> <strong>Note:</strong> Your listing will be reviewed by an admin. You'll be notified once approved.
+            <i class="fas fa-clock"></i> <strong>Note:</strong> Your listing will be reviewed by an admin. You'll be notified once approved. After approval, you'll need to pay the deposit and commission to activate your listing.
         </div>
     </div>
 </div>
@@ -389,7 +518,21 @@ $conn->close();
         document.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
         document.querySelector(`.type-option[data-type="${type}"]`).classList.add('selected');
         
-        const categorySelect = document.querySelector('select[name="category_id"]');
+        // Show/hide dynamic fields
+        document.getElementById('propertyFields').classList.remove('active');
+        document.getElementById('carFields').classList.remove('active');
+        document.getElementById('jobFields').classList.remove('active');
+        
+        if (type === 'rental') {
+            document.getElementById('propertyFields').classList.add('active');
+        } else if (type === 'product') {
+            document.getElementById('carFields').classList.add('active');
+        } else if (type === 'job') {
+            document.getElementById('jobFields').classList.add('active');
+        }
+        
+        // Filter categories by type
+        const categorySelect = document.getElementById('categorySelect');
         for (let i = 0; i < categorySelect.options.length; i++) {
             const option = categorySelect.options[i];
             if (option.value === '') continue;
@@ -451,7 +594,8 @@ $conn->close();
         previewGalleryImages(input);
     }
     
-    selectType('product');
+    // Initialize with rental type
+    selectType('rental');
 </script>
 
 <?php

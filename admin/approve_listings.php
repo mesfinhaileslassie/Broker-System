@@ -1,5 +1,5 @@
 <?php
-// admin/approve_listings.php - Approve Listings with image display
+// admin/approve_listings.php - Approve Listings with House/Car/Job details
 
 $page_title = 'Approve Listings';
 ob_start();
@@ -166,10 +166,11 @@ $conn->close();
         display: flex;
         margin-bottom: 8px;
         font-size: 13px;
+        flex-wrap: wrap;
     }
     
     .detail-label {
-        width: 100px;
+        width: 120px;
         font-weight: 600;
         color: #64748b;
     }
@@ -187,6 +188,7 @@ $conn->close();
         max-width: 100%;
         border-radius: 12px;
         object-fit: cover;
+        max-height: 200px;
     }
     
     .listing-description {
@@ -199,10 +201,11 @@ $conn->close();
         color: #475569;
     }
     
-    .listing-description strong {
-        color: #0f172a;
-        display: block;
-        margin-bottom: 8px;
+    .additional-details {
+        background: #e0e7ff;
+        padding: 16px;
+        border-radius: 16px;
+        margin: 16px 0;
     }
     
     .form-row {
@@ -292,6 +295,11 @@ $conn->close();
         box-shadow: 0 4px 12px rgba(239,68,68,0.3);
     }
     
+    .btn-secondary {
+        background: #64748b;
+        color: white;
+    }
+    
     .reject-form {
         display: none;
         margin-top: 20px;
@@ -318,11 +326,17 @@ $conn->close();
         display: block;
     }
     
-    .empty-state h3 {
-        font-size: 20px;
-        color: #334155;
-        margin-bottom: 8px;
+    .type-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
     }
+    
+    .type-rental { background: #dbeafe; color: #1e40af; }
+    .type-product { background: #d1fae5; color: #065f46; }
+    .type-job { background: #fed7aa; color: #9a3412; }
     
     @media (max-width: 768px) {
         .stats-grid { grid-template-columns: 1fr; }
@@ -332,7 +346,6 @@ $conn->close();
         .btn { width: 100%; text-align: center; }
         .detail-row { flex-direction: column; }
         .detail-label { width: auto; margin-bottom: 4px; }
-        .listing-image img { max-width: 100%; }
     }
 </style>
 
@@ -366,17 +379,33 @@ $conn->close();
 <?php endif; ?>
 
 <?php if ($pendingListings && $pendingListings->num_rows > 0): ?>
-    <?php while($listing = $pendingListings->fetch_assoc()): ?>
+    <?php while($listing = $pendingListings->fetch_assoc()): 
+        $additional = $listing['additional_details'] ? json_decode($listing['additional_details'], true) : [];
+        $cover_image = $listing['cover_image'] ? '/broker_system/uploads/listings/' . $listing['cover_image'] : '';
+    ?>
         <div class="listing-card">
             <div class="listing-header">
-                <div class="listing-title"><?php echo htmlspecialchars($listing['title']); ?></div>
+                <div>
+                    <div class="listing-title"><?php echo htmlspecialchars($listing['title']); ?></div>
+                    <div style="margin-top: 8px;">
+                        <span class="type-badge type-<?php echo $listing['type']; ?>">
+                            <?php if ($listing['type'] == 'rental'): ?>
+                                🏡 Property
+                            <?php elseif ($listing['type'] == 'product'): ?>
+                                🚗 Car
+                            <?php else: ?>
+                                💼 Job
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                </div>
                 <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
             </div>
             
             <!-- Display Cover Image -->
-            <?php if ($listing['cover_image']): ?>
+            <?php if ($cover_image && file_exists(str_replace('/broker_system/', '', $cover_image))): ?>
                 <div class="listing-image">
-                    <img src="/broker_system/uploads/listings/<?php echo $listing['cover_image']; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>">
+                    <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>">
                 </div>
             <?php endif; ?>
             
@@ -389,14 +418,6 @@ $conn->close();
                     </div>
                 </div>
                 <div class="detail-row">
-                    <div class="detail-label">Type:</div>
-                    <div class="detail-value">
-                        <span class="badge" style="background: #e0e7ff; color: #4f46e5; padding: 2px 8px; border-radius: 20px; font-size: 11px;">
-                            <?php echo ucfirst($listing['type']); ?>
-                        </span>
-                    </div>
-                </div>
-                <div class="detail-row">
                     <div class="detail-label">Location:</div>
                     <div class="detail-value"><?php echo htmlspecialchars($listing['location'] ?? 'Not specified'); ?></div>
                 </div>
@@ -406,8 +427,29 @@ $conn->close();
                 </div>
             </div>
             
+            <!-- Additional Details based on type -->
+            <?php if (!empty($additional)): ?>
+                <div class="additional-details">
+                    <strong><i class="fas fa-info-circle"></i> Additional Details:</strong><br>
+                    <?php if ($listing['type'] == 'rental'): ?>
+                        🛏️ Bedrooms: <?php echo $additional['bedrooms'] ?? 'N/A'; ?> | 
+                        🚿 Bathrooms: <?php echo $additional['bathrooms'] ?? 'N/A'; ?> | 
+                        📐 Area: <?php echo $additional['area'] ?? 'N/A'; ?> sqm
+                    <?php elseif ($listing['type'] == 'product'): ?>
+                        📅 Year: <?php echo $additional['year'] ?? 'N/A'; ?> | 
+                        📊 Mileage: <?php echo number_format($additional['mileage'] ?? 0); ?> km | 
+                        ⛽ Fuel: <?php echo $additional['fuel_type'] ?? 'N/A'; ?> | 
+                        ⚙️ Transmission: <?php echo $additional['transmission'] ?? 'N/A'; ?>
+                    <?php elseif ($listing['type'] == 'job'): ?>
+                        <strong>Employment Type:</strong> <?php echo $additional['employment_type'] ?? 'N/A'; ?><br>
+                        <strong>Requirements:</strong><br>
+                        <?php echo nl2br(htmlspecialchars($additional['requirements'] ?? '')); ?>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            
             <div class="listing-description">
-                <strong>Description:</strong>
+                <strong>Description:</strong><br>
                 <?php echo nl2br(htmlspecialchars(substr($listing['description'], 0, 300))); ?>
                 <?php if (strlen($listing['description']) > 300): ?>...<?php endif; ?>
             </div>
@@ -443,7 +485,7 @@ $conn->close();
                         <textarea name="rejection_reason" rows="3" placeholder="Explain why this listing is being rejected..."></textarea>
                         <div class="info-text">This reason will be shared with the seller</div>
                     </div>
-                    <button type="submit" name="reject_listing" class="btn btn-secondary" style="background: #64748b; color: white;" onclick="return confirm('Reject this listing?')">
+                    <button type="submit" name="reject_listing" class="btn btn-secondary" onclick="return confirm('Reject this listing?')">
                         Confirm Rejection
                     </button>
                 </div>
