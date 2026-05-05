@@ -1,20 +1,20 @@
 <?php
-// auth/register.php - Modern Registration Page with White Background
+// auth/register.php
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 
-$error = '';
+$error   = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $full_name = trim($_POST['full_name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $password = $_POST['password'] ?? '';
+    $full_name        = trim($_POST['full_name'] ?? '');
+    $email            = trim($_POST['email'] ?? '');
+    $phone            = trim($_POST['phone'] ?? '');
+    $password         = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
-    
+
     if (empty($full_name) || empty($email) || empty($password)) {
         $error = 'Please fill in all required fields';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -25,35 +25,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Passwords do not match';
     } else {
         $conn = getDbConnection();
-        
+
         $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
-        
+
         if ($result->num_rows > 0) {
             $error = 'Email already registered';
         } else {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-            
+
             $stmt = $conn->prepare("INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, 'user', 1)");
             $stmt->bind_param("ssss", $full_name, $email, $phone, $password_hash);
-            
+
             if ($stmt->execute()) {
                 $user_id = $conn->insert_id;
                 $conn->query("UPDATE users SET balance = balance + 100 WHERE id = $user_id");
                 $conn->query("INSERT INTO wallet_transactions (user_id, amount, type, description) VALUES ($user_id, 100, 'deposit', 'Welcome bonus')");
-                
+
                 $userBalance = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
                 userLogin($user_id, $full_name, $email, 'user', $userBalance['balance']);
-                
-                $success = 'Registration successful! Redirecting to dashboard...';
+
+                $success = 'Account created! Redirecting to your dashboard…';
                 header('Refresh: 2; URL=/broker_system/user/dashboard.php');
             } else {
                 $error = 'Registration failed. Please try again.';
             }
         }
-        
         $conn->close();
     }
 }
@@ -63,496 +62,515 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>Create Account — Ethio Brokerplace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ── Reset & Base ──────────────────────────────── */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --brand:         #4f6ef7;
+            --brand-dark:    #3a56d4;
+            --brand-soft:    #eef1fe;
+            --surface:       #ffffff;
+            --bg:            #f3f5fb;
+            --border:        #e4e7f0;
+            --text:          #1a1d2e;
+            --muted:         #6b7296;
+            --success-bg:    #f0fdf4;
+            --success-border:#bbf7d0;
+            --success-text:  #15803d;
+            --error-bg:      #fff5f5;
+            --error-border:  #fecaca;
+            --error-text:    #c0392b;
+            --radius-sm:     8px;
+            --radius-md:     14px;
+            --radius-lg:     22px;
+            --shadow-card:   0 8px 32px rgba(79, 110, 247, 0.10), 0 1px 4px rgba(0,0,0,0.06);
+            --transition:    0.2s ease;
+            --font:          'DM Sans', sans-serif;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font);
+            background: var(--bg);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #f5f7fa 0%, #eef2f7 100%);
-            padding: 20px;
-            position: relative;
+            padding: 16px;
+            background-image: radial-gradient(circle, #c7cef5 1px, transparent 1px);
+            background-size: 22px 22px;
         }
 
-        /* Decorative Elements */
-        .decoration {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        .decoration::before {
-            content: '🎁';
-            position: absolute;
-            top: 15%;
-            left: 3%;
-            font-size: 80px;
-            opacity: 0.03;
-            animation: float 20s infinite;
-        }
-
-        .decoration::after {
-            content: '✨';
-            position: absolute;
-            bottom: 15%;
-            right: 3%;
-            font-size: 100px;
-            opacity: 0.03;
-            animation: float 15s infinite reverse;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-20px) rotate(10deg); }
-        }
-
-        /* Register Container */
-        .register-container {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            max-width: 520px;
-        }
-
-        /* Card */
+        /* ── Card ──────────────────────────────────────── */
         .card {
-            background: white;
-            border-radius: 32px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-card);
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 480px;
             overflow: hidden;
-            transition: transform 0.3s ease;
         }
 
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.2);
-        }
-
-        /* Header */
+        /* ── Header ────────────────────────────────────── */
         .card-header {
-            background: white;
-            padding: 32px 32px 24px;
-            text-align: center;
-            border-bottom: 1px solid #f0f2f5;
+            padding: 24px 28px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 14px;
         }
 
-        .logo-wrapper {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            width: 65px;
-            height: 65px;
-            border-radius: 50%;
+        .logo {
+            width: 46px;
+            height: 46px;
+            border-radius: var(--radius-sm);
+            background: var(--brand);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 16px;
-            box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.3);
+            flex-shrink: 0;
         }
 
-        .logo-icon {
-            font-size: 30px;
-            color: white;
-        }
+        .logo i { color: #fff; font-size: 20px; }
 
-        .card-header h1 {
-            font-size: 28px;
+        .header-text h1 {
+            font-size: 18px;
             font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 6px;
+            color: var(--text);
+            line-height: 1.2;
         }
 
-        .card-header p {
+        .header-text p {
+            font-size: 12.5px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        /* Bonus pill inside header */
+        .bonus-pill {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            padding: 4px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .bonus-pill i  { color: #f59e0b; font-size: 11px; }
+        .bonus-pill span { font-size: 11px; font-weight: 600; color: #92400e; }
+
+        /* ── Body ──────────────────────────────────────── */
+        .card-body { padding: 22px 28px 26px; }
+
+        /* ── Alert ─────────────────────────────────────── */
+        .alert {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
             font-size: 13px;
-            color: #64748b;
+            font-weight: 500;
+            margin-bottom: 16px;
+            animation: fadeIn var(--transition);
         }
 
-        /* Form */
-        .card-body {
-            padding: 32px;
+        .alert-error   { background: var(--error-bg);   border: 1px solid var(--error-border);   color: var(--error-text); }
+        .alert-success { background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success-text); }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
 
-        .form-row {
+        /* ── Form Grid ─────────────────────────────────── */
+        .form-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
+            gap: 14px;
         }
 
-        .input-group {
-            margin-bottom: 20px;
-        }
+        .field       { display: flex; flex-direction: column; }
+        .field.full  { grid-column: 1 / -1; }
 
-        .input-group.full-width {
-            grid-column: span 2;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #334155;
+        label {
             font-size: 12px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 5px;
+            letter-spacing: 0.01em;
         }
 
-        .input-wrapper {
+        /* ── Inputs ────────────────────────────────────── */
+        .input-wrap {
             position: relative;
             display: flex;
             align-items: center;
         }
 
-        .input-icon {
+        .input-wrap i.left {
             position: absolute;
-            left: 16px;
-            color: #94a3b8;
-            font-size: 16px;
-            transition: color 0.3s;
+            left: 11px;
+            color: var(--muted);
+            font-size: 13px;
+            pointer-events: none;
+            transition: color var(--transition);
         }
 
-        .input-wrapper input {
+        .input-wrap input {
             width: 100%;
-            padding: 12px 16px 12px 44px;
-            border: 2px solid #e2e8f0;
-            border-radius: 14px;
-            font-size: 14px;
-            font-family: 'Inter', sans-serif;
-            transition: all 0.3s;
-            background: #fafbfc;
+            height: 40px;
+            padding: 0 36px 0 34px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-family: var(--font);
+            font-size: 13.5px;
+            color: var(--text);
+            background: #fafbff;
+            transition: border-color var(--transition), box-shadow var(--transition);
         }
 
-        .input-wrapper input:focus {
+        .input-wrap input:focus {
             outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
+            border-color: var(--brand);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.10);
         }
 
-        .input-wrapper input:focus + .input-icon {
-            color: #667eea;
-        }
+        .input-wrap input:focus ~ i.left { color: var(--brand); }
 
-        .password-toggle {
+        .toggle-pw {
             position: absolute;
-            right: 16px;
-            left: auto;
+            right: 11px;
             cursor: pointer;
-            color: #94a3b8;
+            color: var(--muted);
+            font-size: 13px;
+            transition: color var(--transition);
+            padding: 4px;
         }
 
-        .password-strength {
-            margin-top: 8px;
-            font-size: 11px;
-            color: #64748b;
+        .toggle-pw:hover { color: var(--brand); }
+
+        /* ── Password strength ─────────────────────────── */
+        .strength-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 5px;
         }
 
         .strength-bar {
-            height: 4px;
-            background: #e2e8f0;
+            flex: 1;
+            height: 3px;
+            background: var(--border);
             border-radius: 2px;
-            margin-top: 8px;
             overflow: hidden;
         }
 
-        .strength-bar-fill {
+        .strength-fill {
             height: 100%;
             width: 0%;
-            transition: width 0.3s;
             border-radius: 2px;
+            transition: width 0.3s ease, background-color 0.3s ease;
         }
 
-        /* Alert Messages */
-        .alert {
-            padding: 12px 16px;
-            border-radius: 14px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .alert-error {
-            background: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fee2e2;
-        }
-
-        .alert-success {
-            background: #f0fdf4;
-            color: #059669;
-            border: 1px solid #dcfce7;
-        }
-
-        /* Register Button */
-        .btn-register {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 40px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-top: 8px;
-        }
-
-        .btn-register:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.4);
-        }
-
-        /* Bonus Badge */
-        .bonus-badge {
-            background: linear-gradient(135deg, #fffbeb, #fef3c7);
-            padding: 14px;
-            border-radius: 16px;
-            text-align: center;
-            margin: 24px 0 20px;
-            border: 1px solid #fde68a;
-        }
-
-        .bonus-badge i {
-            color: #f59e0b;
-            margin-right: 8px;
-            font-size: 18px;
-        }
-
-        .bonus-badge span {
-            color: #92400e;
-            font-size: 13px;
-            font-weight: 600;
-        }
-
-        /* Login Link */
-        .login-link {
-            text-align: center;
-            padding-top: 20px;
-            border-top: 1px solid #f0f2f5;
-        }
-
-        .login-link p {
-            color: #64748b;
-            font-size: 13px;
-        }
-
-        .login-link a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 600;
+        .strength-label {
+            font-size: 10.5px;
+            font-weight: 500;
+            color: var(--muted);
+            min-width: 70px;
+            text-align: right;
             transition: color 0.3s;
         }
 
-        .login-link a:hover {
-            color: #764ba2;
+        /* ── Match indicator ───────────────────────────── */
+        .match-icon {
+            position: absolute;
+            right: 34px; /* sits left of the toggle */
+            font-size: 12px;
+            transition: opacity var(--transition);
+            opacity: 0;
         }
 
-        @media (max-width: 520px) {
-            .form-row {
-                grid-template-columns: 1fr;
-                gap: 0;
-            }
-            
-            .input-group.full-width {
-                grid-column: span 1;
-            }
-            
-            .card-header {
-                padding: 28px 24px 20px;
-            }
-            
-            .card-body {
-                padding: 28px 24px;
-            }
-            
-            .logo-wrapper {
-                width: 55px;
-                height: 55px;
-            }
-            
-            .logo-icon {
-                font-size: 26px;
-            }
+        .match-icon.visible { opacity: 1; }
+        .match-icon.ok      { color: #15803d; }
+        .match-icon.bad     { color: var(--error-text); }
+
+        /* ── Submit ────────────────────────────────────── */
+        .btn-submit {
+            width: 100%;
+            height: 42px;
+            background: var(--brand);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-family: var(--font);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 18px;
+            transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+        }
+
+        .btn-submit:hover {
+            background: var(--brand-dark);
+            box-shadow: 0 4px 14px rgba(79, 110, 247, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-submit:active { transform: translateY(0); }
+
+        /* ── Footer link ───────────────────────────────── */
+        .footer-link {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .footer-link a {
+            color: var(--brand);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color var(--transition);
+        }
+
+        .footer-link a:hover { color: var(--brand-dark); }
+
+        /* ── Responsive ────────────────────────────────── */
+        @media (max-width: 480px) {
+            .form-grid           { grid-template-columns: 1fr; }
+            .field.full          { grid-column: 1; }
+            .bonus-pill          { display: none; }
+            .card-header,
+            .card-body           { padding-left: 18px; padding-right: 18px; }
         }
     </style>
 </head>
 <body>
-    <div class="decoration"></div>
 
-    <div class="register-container">
-        <div class="card">
-            <div class="card-header">
-                <div class="logo-wrapper">
-                    <i class="fas fa-user-plus logo-icon"></i>
-                </div>
-                <h1>Create Account</h1>
-                <p>Join Ethio Brokerplace today</p>
-            </div>
-            
-            <div class="card-body">
-                <?php if ($error): ?>
-                    <div class="alert alert-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <?php echo htmlspecialchars($error); ?>
-                    </div>
-                <?php endif; ?>
-                
-                <?php if ($success): ?>
-                    <div class="alert alert-success">
-                        <i class="fas fa-check-circle"></i>
-                        <?php echo htmlspecialchars($success); ?>
-                    </div>
-                <?php endif; ?>
-                
-                <form method="POST">
-                    <div class="input-group full-width">
-                        <label>Full Name</label>
-                        <div class="input-wrapper">
-                            <i class="fas fa-user input-icon"></i>
-                            <input type="text" name="full_name" placeholder="Enter your full name" required value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>">
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="input-group">
-                            <label>Email Address</label>
-                            <div class="input-wrapper">
-                                <i class="fas fa-envelope input-icon"></i>
-                                <input type="email" name="email" placeholder="you@example.com" required value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
-                            </div>
-                        </div>
-                        
-                        <div class="input-group">
-                            <label>Phone Number</label>
-                            <div class="input-wrapper">
-                                <i class="fas fa-phone input-icon"></i>
-                                <input type="tel" name="phone" placeholder="+251XXXXXXXXX" value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="input-group">
-                            <label>Password</label>
-                            <div class="input-wrapper">
-                                <i class="fas fa-lock input-icon"></i>
-                                <input type="password" name="password" id="password" placeholder="Create a password" required minlength="6">
-                                <i class="fas fa-eye password-toggle" id="togglePassword"></i>
-                            </div>
-                            <div class="password-strength" id="passwordStrength"></div>
-                            <div class="strength-bar">
-                                <div class="strength-bar-fill" id="strengthBar"></div>
-                            </div>
-                        </div>
-                        
-                        <div class="input-group">
-                            <label>Confirm Password</label>
-                            <div class="input-wrapper">
-                                <i class="fas fa-lock input-icon"></i>
-                                <input type="password" name="confirm_password" id="confirmPassword" placeholder="Confirm your password" required>
-                                <i class="fas fa-eye password-toggle" id="toggleConfirmPassword"></i>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="btn-register">
-                        <i class="fas fa-arrow-right-to-bracket"></i> Create Account
-                    </button>
-                </form>
-                
-                <div class="bonus-badge">
-                    <i class="fas fa-gift"></i>
-                    <span>Get 100 ETB welcome bonus on registration!</span>
-                </div>
-                
-                <div class="login-link">
-                    <p>Already have an account? <a href="login.php">Sign in</a></p>
-                </div>
-            </div>
+<div class="card">
+
+    <!-- Header -->
+    <div class="card-header">
+        <div class="logo">
+            <i class="fas fa-store"></i>
+        </div>
+        <div class="header-text">
+            <h1>Create Account</h1>
+            <p>Join Ethio Brokerplace today</p>
+        </div>
+        <div class="bonus-pill">
+            <i class="fas fa-gift"></i>
+            <span>100 ETB bonus</span>
         </div>
     </div>
 
-    <script>
-        // Password strength checker
-        const passwordInput = document.getElementById('password');
-        const strengthText = document.getElementById('passwordStrength');
-        const strengthBar = document.getElementById('strengthBar');
-        
-        passwordInput.addEventListener('input', function() {
-            const password = this.value;
-            let strength = 0;
-            let message = '';
-            let color = '';
-            let width = 0;
-            
-            if (password.length >= 6) strength++;
-            if (password.length >= 10) strength++;
-            if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++;
-            if (password.match(/[0-9]/)) strength++;
-            if (password.match(/[^a-zA-Z0-9]/)) strength++;
-            
-            if (strength <= 1) {
-                message = 'Weak password';
-                color = '#dc2626';
-                width = '25%';
-            } else if (strength <= 3) {
-                message = 'Medium password';
-                color = '#f59e0b';
-                width = '50%';
-            } else if (strength <= 4) {
-                message = 'Strong password';
-                color = '#10b981';
-                width = '75%';
-            } else {
-                message = 'Very strong password';
-                color = '#059669';
-                width = '100%';
-            }
-            
-            strengthText.textContent = message;
-            strengthBar.style.backgroundColor = color;
-            strengthBar.style.width = width;
+    <!-- Body -->
+    <div class="card-body">
+
+        <?php if ($error): ?>
+            <div class="alert alert-error">
+                <i class="fas fa-exclamation-circle"></i>
+                <?php echo htmlspecialchars($error); ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($success): ?>
+            <div class="alert alert-success">
+                <i class="fas fa-circle-check"></i>
+                <?php echo htmlspecialchars($success); ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" novalidate>
+            <div class="form-grid">
+
+                <!-- Full Name -->
+                <div class="field full">
+                    <label for="full_name">Full Name</label>
+                    <div class="input-wrap">
+                        <input
+                            type="text"
+                            id="full_name"
+                            name="full_name"
+                            placeholder="Abebe Kebede"
+                            required
+                            autofocus
+                            autocomplete="name"
+                            value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>"
+                        >
+                        <i class="fas fa-user left"></i>
+                    </div>
+                </div>
+
+                <!-- Email -->
+                <div class="field">
+                    <label for="email">Email Address</label>
+                    <div class="input-wrap">
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            placeholder="you@example.com"
+                            required
+                            autocomplete="email"
+                            value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
+                        >
+                        <i class="fas fa-envelope left"></i>
+                    </div>
+                </div>
+
+                <!-- Phone -->
+                <div class="field">
+                    <label for="phone">Phone <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+                    <div class="input-wrap">
+                        <input
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            placeholder="+251 9XX XXX XXX"
+                            autocomplete="tel"
+                            value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>"
+                        >
+                        <i class="fas fa-phone left"></i>
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div class="field">
+                    <label for="password">Password</label>
+                    <div class="input-wrap">
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            placeholder="Min. 6 characters"
+                            required
+                            minlength="6"
+                            autocomplete="new-password"
+                        >
+                        <i class="fas fa-lock left"></i>
+                        <i class="fas fa-eye toggle-pw" id="togglePassword"></i>
+                    </div>
+                    <div class="strength-row">
+                        <div class="strength-bar">
+                            <div class="strength-fill" id="strengthFill"></div>
+                        </div>
+                        <span class="strength-label" id="strengthLabel"></span>
+                    </div>
+                </div>
+
+                <!-- Confirm Password -->
+                <div class="field">
+                    <label for="confirm_password">Confirm Password</label>
+                    <div class="input-wrap">
+                        <input
+                            type="password"
+                            id="confirm_password"
+                            name="confirm_password"
+                            placeholder="Re-enter password"
+                            required
+                            autocomplete="new-password"
+                        >
+                        <i class="fas fa-lock left"></i>
+                        <i class="fas match-icon" id="matchIcon"></i>
+                        <i class="fas fa-eye toggle-pw" id="toggleConfirm"></i>
+                    </div>
+                </div>
+
+            </div><!-- /form-grid -->
+
+            <button type="submit" class="btn-submit">
+                <i class="fas fa-user-plus"></i>
+                Create Account
+            </button>
+        </form>
+
+        <p class="footer-link">
+            Already have an account? <a href="login.php">Sign in</a>
+        </p>
+
+    </div><!-- /card-body -->
+</div><!-- /card -->
+
+<script>
+    /* ── Password strength ──────────────────────────── */
+    const pwInput      = document.getElementById('password');
+    const strengthFill = document.getElementById('strengthFill');
+    const strengthLbl  = document.getElementById('strengthLabel');
+
+    const levels = [
+        { label: '',            color: '',        w: '0%'   },
+        { label: 'Weak',        color: '#ef4444', w: '25%'  },
+        { label: 'Fair',        color: '#f59e0b', w: '50%'  },
+        { label: 'Good',        color: '#3b82f6', w: '75%'  },
+        { label: 'Strong',      color: '#10b981', w: '100%' },
+    ];
+
+    pwInput.addEventListener('input', function () {
+        const v = this.value;
+        let score = 0;
+        if (v.length >= 6)                               score++;
+        if (v.length >= 10)                              score++;
+        if (/[a-z]/.test(v) && /[A-Z]/.test(v))         score++;
+        if (/[0-9]/.test(v))                             score++;
+        if (/[^a-zA-Z0-9]/.test(v))                     score++;
+
+        const lvl = v.length === 0 ? 0 : Math.min(Math.ceil(score / 1.25), 4);
+        strengthFill.style.width           = levels[lvl].w;
+        strengthFill.style.backgroundColor = levels[lvl].color;
+        strengthLbl.style.color            = levels[lvl].color || 'var(--muted)';
+        strengthLbl.textContent            = levels[lvl].label;
+
+        checkMatch(); // re-check match if password changes
+    });
+
+    /* ── Confirm match indicator ────────────────────── */
+    const confirmInput = document.getElementById('confirm_password');
+    const matchIcon    = document.getElementById('matchIcon');
+
+    function checkMatch() {
+        const pw  = pwInput.value;
+        const cpw = confirmInput.value;
+        if (!cpw) {
+            matchIcon.classList.remove('visible', 'ok', 'bad', 'fa-check', 'fa-xmark');
+            return;
+        }
+        const ok = pw === cpw;
+        matchIcon.className = `fas match-icon visible ${ok ? 'ok fa-check' : 'bad fa-xmark'}`;
+    }
+
+    confirmInput.addEventListener('input', checkMatch);
+
+    /* ── Password toggles ───────────────────────────── */
+    function makeToggle(btnId, inputId) {
+        document.getElementById(btnId).addEventListener('click', function () {
+            const inp  = document.getElementById(inputId);
+            const show = inp.type === 'password';
+            inp.type = show ? 'text' : 'password';
+            this.classList.toggle('fa-eye',      !show);
+            this.classList.toggle('fa-eye-slash', show);
         });
-        
-        // Password visibility toggles
-        const togglePassword = document.getElementById('togglePassword');
-        const toggleConfirm = document.getElementById('toggleConfirmPassword');
-        const password = document.getElementById('password');
-        const confirmPassword = document.getElementById('confirmPassword');
-        
-        togglePassword.addEventListener('click', function() {
-            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-            password.setAttribute('type', type);
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-        });
-        
-        toggleConfirm.addEventListener('click', function() {
-            const type = confirmPassword.getAttribute('type') === 'password' ? 'text' : 'password';
-            confirmPassword.setAttribute('type', type);
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-        });
-    </script>
+    }
+
+    makeToggle('togglePassword', 'password');
+    makeToggle('toggleConfirm',  'confirm_password');
+</script>
 </body>
 </html>

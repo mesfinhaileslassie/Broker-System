@@ -5,9 +5,7 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 
-// Check if already logged in - but don't redirect if we're already trying to login
 if (isLoggedIn()) {
-    // Redirect based on role
     if ($_SESSION['user_role'] == 'admin') {
         header('Location: /broker_system/admin/dashboard.php');
     } else {
@@ -19,37 +17,32 @@ if (isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
+    $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    
+
     if (empty($email) || empty($password)) {
         $error = 'Please enter email and password';
     } else {
         $conn = getDbConnection();
-        
         $stmt = $conn->prepare("SELECT id, full_name, email, password_hash, role, balance, is_suspended FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
-        
+
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
-            
             if ($user['is_suspended']) {
                 $error = 'Your account has been suspended. Please contact support.';
             } elseif (password_verify($password, $user['password_hash'])) {
-                // Set session
                 $_SESSION['user_logged_in'] = true;
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['user_name'] = $user['full_name'];
-                $_SESSION['user_email'] = $user['email'];
-                $_SESSION['user_role'] = $user['role'];
-                $_SESSION['user_balance'] = $user['balance'];
-                
-                // Update last login
+                $_SESSION['user_id']        = $user['id'];
+                $_SESSION['user_name']      = $user['full_name'];
+                $_SESSION['user_email']     = $user['email'];
+                $_SESSION['user_role']      = $user['role'];
+                $_SESSION['user_balance']   = $user['balance'];
+
                 $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
-                
-                // Redirect based on role
+
                 if ($user['role'] == 'admin') {
                     header('Location: /broker_system/admin/dashboard.php');
                 } else {
@@ -64,7 +57,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error = 'Invalid email or password';
         }
-        
         $conn->close();
     }
 }
@@ -74,546 +66,454 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome Back - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>Sign In — Ethio Brokerplace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ── Reset & Base ──────────────────────────────── */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --brand:        #4f6ef7;
+            --brand-dark:   #3a56d4;
+            --brand-soft:   #eef1fe;
+            --surface:      #ffffff;
+            --bg:           #f3f5fb;
+            --border:       #e4e7f0;
+            --text:         #1a1d2e;
+            --muted:        #6b7296;
+            --error-bg:     #fff5f5;
+            --error-border: #fecaca;
+            --error-text:   #c0392b;
+            --radius-sm:    8px;
+            --radius-md:    14px;
+            --radius-lg:    22px;
+            --shadow-card:  0 8px 32px rgba(79, 110, 247, 0.10), 0 1px 4px rgba(0,0,0,0.06);
+            --transition:   0.2s ease;
+            --font:         'DM Sans', sans-serif;
+            --mono:         'DM Mono', monospace;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font);
+            background: var(--bg);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #f5f7fa 0%, #eef2f7 100%);
-            position: relative;
-            padding: 20px;
+            padding: 16px;
+            /* Subtle dot-grid background */
+            background-image: radial-gradient(circle, #c7cef5 1px, transparent 1px);
+            background-size: 22px 22px;
         }
 
-        /* Decorative Elements */
-        .decoration {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        .decoration::before {
-            content: '🏪';
-            position: absolute;
-            top: 10%;
-            left: 5%;
-            font-size: 120px;
-            opacity: 0.03;
-            animation: float 20s infinite;
-        }
-
-        .decoration::after {
-            content: '💰';
-            position: absolute;
-            bottom: 10%;
-            right: 5%;
-            font-size: 100px;
-            opacity: 0.03;
-            animation: float 15s infinite reverse;
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-20px) rotate(10deg); }
-        }
-
-        /* Login Container */
-        .login-container {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            max-width: 460px;
-        }
-
-        /* Main Card */
+        /* ── Card ──────────────────────────────────────── */
         .card {
-            background: white;
-            border-radius: 32px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-card);
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 420px;
             overflow: hidden;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
 
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.2);
-        }
-
-        /* Header */
+        /* ── Header ────────────────────────────────────── */
         .card-header {
-            background: white;
-            padding: 40px 32px 24px;
-            text-align: center;
-            border-bottom: 1px solid #f0f2f5;
+            padding: 28px 28px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 14px;
         }
 
-        .logo-wrapper {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
+        .logo {
+            width: 46px;
+            height: 46px;
+            border-radius: var(--radius-sm);
+            background: var(--brand);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 20px;
-            box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.3);
+            flex-shrink: 0;
         }
 
-        .logo-icon {
-            font-size: 32px;
-            color: white;
-        }
+        .logo i { color: #fff; font-size: 20px; }
 
-        .card-header h1 {
-            font-size: 28px;
+        .header-text h1 {
+            font-size: 18px;
             font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 8px;
+            color: var(--text);
+            line-height: 1.2;
         }
 
-        .card-header p {
-            font-size: 14px;
-            color: #64748b;
+        .header-text p {
+            font-size: 12.5px;
+            color: var(--muted);
+            margin-top: 2px;
         }
 
-        .role-badge {
-            display: inline-block;
-            background: #f1f5f9;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            color: #64748b;
-            margin-top: 12px;
-        }
+        /* ── Body ──────────────────────────────────────── */
+        .card-body { padding: 24px 28px; }
 
-        .role-badge i {
-            margin-right: 4px;
-            font-size: 10px;
-        }
-
-        /* Form */
-        .card-body {
-            padding: 32px;
-        }
-
-        .input-group {
-            margin-bottom: 24px;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #334155;
+        /* ── Alert ─────────────────────────────────────── */
+        .alert {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
             font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 18px;
+            background: var(--error-bg);
+            border: 1px solid var(--error-border);
+            color: var(--error-text);
+            animation: fadeIn var(--transition);
         }
 
-        .input-wrapper {
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Form ──────────────────────────────────────── */
+        .field { margin-bottom: 16px; }
+
+        label {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 6px;
+            letter-spacing: 0.01em;
+        }
+
+        .input-wrap {
             position: relative;
             display: flex;
             align-items: center;
         }
 
-        .input-icon {
+        .input-wrap i.left {
             position: absolute;
-            left: 16px;
-            color: #94a3b8;
-            font-size: 18px;
-            transition: color 0.3s;
+            left: 12px;
+            color: var(--muted);
+            font-size: 14px;
+            pointer-events: none;
+            transition: color var(--transition);
         }
 
-        .input-wrapper input {
+        .input-wrap input {
             width: 100%;
-            padding: 14px 16px 14px 48px;
-            border: 2px solid #e2e8f0;
-            border-radius: 16px;
-            font-size: 15px;
-            font-family: 'Inter', sans-serif;
-            transition: all 0.3s;
-            background: #fafbfc;
+            height: 42px;
+            padding: 0 40px 0 38px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-family: var(--font);
+            font-size: 14px;
+            color: var(--text);
+            background: #fafbff;
+            transition: border-color var(--transition), box-shadow var(--transition);
         }
 
-        .input-wrapper input:focus {
+        .input-wrap input:focus {
             outline: none;
-            border-color: #667eea;
-            background: white;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.08);
+            border-color: var(--brand);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.10);
         }
 
-        .input-wrapper input:focus + .input-icon {
-            color: #667eea;
-        }
+        .input-wrap input:focus ~ i.left { color: var(--brand); }
 
-        .password-toggle {
+        .toggle-pw {
             position: absolute;
-            right: 16px;
-            left: auto;
+            right: 12px;
             cursor: pointer;
-            color: #94a3b8;
-            transition: color 0.3s;
+            color: var(--muted);
+            font-size: 14px;
+            transition: color var(--transition);
+            padding: 4px;
         }
 
-        .password-toggle:hover {
-            color: #667eea;
-        }
+        .toggle-pw:hover { color: var(--brand); }
 
-        /* Alert Messages */
-        .alert {
-            padding: 14px 18px;
-            border-radius: 16px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 13px;
-            font-weight: 500;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .alert-error {
-            background: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fee2e2;
-        }
-
-        /* Login Button */
-        .btn-login {
+        /* ── Submit Button ─────────────────────────────── */
+        .btn-submit {
             width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            height: 42px;
+            background: var(--brand);
+            color: #fff;
             border: none;
-            border-radius: 40px;
-            font-size: 16px;
+            border-radius: var(--radius-sm);
+            font-family: var(--font);
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 24px;
-        }
-
-        .btn-login:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px -5px rgba(102, 126, 234, 0.4);
-        }
-
-        /* Divider */
-        .divider {
             display: flex;
             align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 20px;
+            transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+        }
+
+        .btn-submit:hover {
+            background: var(--brand-dark);
+            box-shadow: 0 4px 14px rgba(79, 110, 247, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-submit:active { transform: translateY(0); }
+
+        /* ── Footer links ──────────────────────────────── */
+        .footer-links {
+            margin-top: 16px;
             text-align: center;
-            margin: 24px 0;
-            color: #94a3b8;
-            font-size: 12px;
+            font-size: 13px;
+            color: var(--muted);
         }
 
-        .divider::before,
-        .divider::after {
-            content: '';
-            flex: 1;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .divider span {
-            margin: 0 16px;
-        }
-
-        /* Register Link */
-        .register-link {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-
-        .register-link p {
-            color: #64748b;
-            font-size: 14px;
-        }
-
-        .register-link a {
-            color: #667eea;
+        .footer-links a {
+            color: var(--brand);
             text-decoration: none;
             font-weight: 600;
-            transition: color 0.3s;
+            transition: color var(--transition);
         }
 
-        .register-link a:hover {
-            color: #764ba2;
+        .footer-links a:hover { color: var(--brand-dark); }
+
+        /* ── Demo Credentials ──────────────────────────── */
+        .demo {
+            margin-top: 18px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
         }
 
-        /* Features Grid */
-        .features {
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            padding-top: 24px;
-            border-top: 1px solid #f0f2f5;
-        }
-
-        .feature {
-            text-align: center;
-            flex: 1;
-        }
-
-        .feature-icon {
-            width: 40px;
-            height: 40px;
-            background: #f0f4ff;
-            border-radius: 12px;
+        .demo-toggle {
+            width: 100%;
+            padding: 9px 14px;
+            background: var(--bg);
+            border: none;
             display: flex;
             align-items: center;
-            justify-content: center;
-            margin: 0 auto 8px;
-        }
-
-        .feature-icon i {
-            font-size: 18px;
-            color: #667eea;
-        }
-
-        .feature span {
-            font-size: 11px;
-            color: #64748b;
-            font-weight: 500;
-        }
-
-        /* Demo Credentials */
-        .demo-box {
-            background: #f8fafc;
-            border-radius: 16px;
-            padding: 16px;
-            margin-top: 20px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .demo-title {
+            justify-content: space-between;
+            cursor: pointer;
+            font-family: var(--font);
             font-size: 12px;
             font-weight: 600;
-            color: #1e293b;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            color: var(--muted);
+            transition: background var(--transition);
         }
 
-        .demo-title i {
-            color: #667eea;
+        .demo-toggle:hover { background: var(--brand-soft); color: var(--brand); }
+
+        .demo-toggle .chevron {
+            font-size: 11px;
+            transition: transform 0.25s ease;
         }
+
+        .demo-toggle[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+
+        .demo-body {
+            display: none;
+            padding: 12px 14px;
+            background: var(--surface);
+        }
+
+        .demo-body.open { display: block; }
 
         .demo-row {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
             padding: 6px 0;
-            font-size: 12px;
+            border-bottom: 1px solid var(--border);
         }
 
-        .demo-role {
-            background: #e2e8f0;
-            padding: 2px 8px;
-            border-radius: 12px;
+        .demo-row:last-child { border-bottom: none; }
+
+        .demo-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .badge {
             font-size: 10px;
             font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 20px;
         }
 
-        .demo-role.admin {
-            background: #fed7aa;
-            color: #9a3412;
-        }
+        .badge-admin { background: #fff3e0; color: #b45309; }
+        .badge-user  { background: #e8f0fe; color: #1a56db; }
 
-        .demo-role.user {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .demo-credentials {
-            font-family: monospace;
+        .demo-creds {
+            font-family: var(--mono);
             font-size: 11px;
-            color: #64748b;
+            color: var(--muted);
+            text-align: right;
         }
 
-        @media (max-width: 480px) {
-            .card-header {
-                padding: 32px 24px 20px;
-            }
-            
-            .card-body {
-                padding: 28px 24px;
-            }
-            
-            .logo-wrapper {
-                width: 60px;
-                height: 60px;
-            }
-            
-            .logo-icon {
-                font-size: 28px;
-            }
-            
-            .card-header h1 {
-                font-size: 24px;
-            }
-            
-            .features {
-                gap: 16px;
-            }
-            
-            .demo-row {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
-            }
+        /* ── Trust Pills ───────────────────────────────── */
+        .trust-row {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 20px;
+            padding-top: 18px;
+            border-top: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .pill {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--brand-soft);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--brand);
+        }
+
+        .pill i { font-size: 10px; }
+
+        /* ── Responsive ────────────────────────────────── */
+        @media (max-width: 440px) {
+            body { background-size: 18px 18px; }
+            .card-header, .card-body { padding-left: 20px; padding-right: 20px; }
         }
     </style>
 </head>
 <body>
-    <div class="decoration"></div>
 
-    <div class="login-container">
-        <div class="card">
-            <div class="card-header">
-                <div class="logo-wrapper">
-                    <i class="fas fa-store logo-icon"></i>
-                </div>
-                <h1>Welcome Back</h1>
-                <p>Sign in to continue to Ethio Brokerplace</p>
-                <div class="role-badge">
-                    <i class="fas fa-users"></i> One account for all services
-                </div>
-            </div>
-            
-            <div class="card-body">
-                <?php if ($error): ?>
-                    <div class="alert alert-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <?php echo htmlspecialchars($error); ?>
-                    </div>
-                <?php endif; ?>
-                
-                <form method="POST">
-                    <div class="input-group">
-                        <label>Email Address</label>
-                        <div class="input-wrapper">
-                            <i class="fas fa-envelope input-icon"></i>
-                            <input type="email" name="email" placeholder="Enter your email address" required autofocus value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label>Password</label>
-                        <div class="input-wrapper">
-                            <i class="fas fa-lock input-icon"></i>
-                            <input type="password" name="password" id="password" placeholder="Enter your password" required>
-                            <i class="fas fa-eye password-toggle" id="togglePassword"></i>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="btn-login">
-                        <i class="fas fa-arrow-right-to-bracket"></i> Sign In
-                    </button>
-                </form>
-                
-                <div class="divider">
-                    <span>New to Brokerplace?</span>
-                </div>
-                
-                <div class="register-link">
-                    <p>Don't have an account? <a href="register.php">Create free account</a></p>
-                </div>
-                
-                <!-- Demo Credentials Box -->
-                <div class="demo-box">
-                    <div class="demo-title">
-                        <i class="fas fa-info-circle"></i>
-                        Demo Accounts
-                    </div>
-                    <div class="demo-row">
-                        <span><strong>Admin Account</strong></span>
-                        <span class="demo-role admin">Administrator</span>
-                    </div>
-                    <div class="demo-row">
-                        <span class="demo-credentials">admin@brokerplace.com</span>
-                        <span class="demo-credentials">admin123</span>
-                    </div>
-                    <div style="border-top: 1px solid #e2e8f0; margin: 10px 0;"></div>
-                    <div class="demo-row">
-                        <span><strong>User Account</strong></span>
-                        <span class="demo-role user">Regular User</span>
-                    </div>
-                    <div class="demo-row">
-                        <span class="demo-credentials">user@example.com</span>
-                        <span class="demo-credentials">password123</span>
-                    </div>
-                    <div style="border-top: 1px solid #e2e8f0; margin: 10px 0;"></div>
-                    <div class="demo-row">
-                        <span><strong>Company Account</strong></span>
-                        <span class="demo-role user">Company</span>
-                    </div>
-                    <div class="demo-row">
-                        <span class="demo-credentials">company@example.com</span>
-                        <span class="demo-credentials">password123</span>
-                    </div>
-                </div>
-                
-                <div class="features">
-                    <div class="feature">
-                        <div class="feature-icon">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <span>Secure Escrow</span>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                        <span>24/7 Support</span>
-                    </div>
-                    <div class="feature">
-                        <div class="feature-icon">
-                            <i class="fas fa-gem"></i>
-                        </div>
-                        <span>100 ETB Bonus</span>
-                    </div>
-                </div>
-            </div>
+<div class="card">
+
+    <!-- Header -->
+    <div class="card-header">
+        <div class="logo">
+            <i class="fas fa-store"></i>
+        </div>
+        <div class="header-text">
+            <h1>Ethio Brokerplace</h1>
+            <p>Sign in to your account</p>
         </div>
     </div>
 
-    <script>
-        // Password visibility toggle
-        const togglePassword = document.getElementById('togglePassword');
-        const password = document.getElementById('password');
-        
-        togglePassword.addEventListener('click', function() {
-            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-            password.setAttribute('type', type);
-            this.classList.toggle('fa-eye');
-            this.classList.toggle('fa-eye-slash');
-        });
-        
-        // Clear any stuck session indications
-        if (performance.navigation.type === 1) {
-            // Page was reloaded, check if we need to clear anything
-            console.log('Page reloaded');
-        }
-    </script>
+    <!-- Body -->
+    <div class="card-body">
+
+        <?php if ($error): ?>
+            <div class="alert">
+                <i class="fas fa-exclamation-circle"></i>
+                <?php echo htmlspecialchars($error); ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" novalidate>
+
+            <div class="field">
+                <label for="email">Email address</label>
+                <div class="input-wrap">
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        placeholder="you@example.com"
+                        required
+                        autofocus
+                        value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
+                        autocomplete="email"
+                    >
+                    <i class="fas fa-envelope left"></i>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="password">Password</label>
+                <div class="input-wrap">
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        placeholder="Enter your password"
+                        required
+                        autocomplete="current-password"
+                    >
+                    <i class="fas fa-lock left"></i>
+                    <i class="fas fa-eye toggle-pw" id="togglePassword" title="Show/hide password"></i>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit">
+                <i class="fas fa-arrow-right-to-bracket"></i>
+                Sign In
+            </button>
+
+        </form>
+
+        <p class="footer-links">
+            Don't have an account? <a href="register.php">Create one free</a>
+        </p>
+
+        <!-- Demo Credentials (collapsible) -->
+        <div class="demo">
+            <button class="demo-toggle" id="demoToggle" aria-expanded="false" aria-controls="demoBody">
+                <span><i class="fas fa-circle-info" style="margin-right:6px;"></i>Demo accounts</span>
+                <i class="fas fa-chevron-down chevron"></i>
+            </button>
+            <div class="demo-body" id="demoBody">
+                <div class="demo-row">
+                    <span class="demo-label">Admin</span>
+                    <span class="badge badge-admin">Administrator</span>
+                    <span class="demo-creds">admin@brokerplace.com · admin123</span>
+                </div>
+                <div class="demo-row">
+                    <span class="demo-label">User</span>
+                    <span class="badge badge-user">Regular</span>
+                    <span class="demo-creds">user@example.com · password123</span>
+                </div>
+                <div class="demo-row">
+                    <span class="demo-label">Company</span>
+                    <span class="badge badge-user">Company</span>
+                    <span class="demo-creds">company@example.com · password123</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trust Pills -->
+        <div class="trust-row">
+            <span class="pill"><i class="fas fa-shield-alt"></i> Secure Escrow</span>
+            <span class="pill"><i class="fas fa-clock"></i> 24/7 Support</span>
+            <span class="pill"><i class="fas fa-gift"></i> 100 ETB Bonus</span>
+        </div>
+
+    </div><!-- /card-body -->
+</div><!-- /card -->
+
+<script>
+    // Password toggle
+    document.getElementById('togglePassword').addEventListener('click', function () {
+        const pw   = document.getElementById('password');
+        const show = pw.type === 'password';
+        pw.type = show ? 'text' : 'password';
+        this.classList.toggle('fa-eye',       !show);
+        this.classList.toggle('fa-eye-slash',  show);
+    });
+
+    // Demo credentials accordion
+    const demoToggle = document.getElementById('demoToggle');
+    const demoBody   = document.getElementById('demoBody');
+
+    demoToggle.addEventListener('click', function () {
+        const open = demoBody.classList.toggle('open');
+        this.setAttribute('aria-expanded', open);
+    });
+</script>
 </body>
 </html>
