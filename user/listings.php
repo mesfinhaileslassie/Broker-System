@@ -1,5 +1,5 @@
 <?php
-// user/listings.php - My Listings Page
+// user/listings.php - My Listings Page with Images
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -66,6 +66,11 @@ $conn->close();
         margin-bottom: 8px;
     }
     
+    .page-header p {
+        color: #64748b;
+        font-size: 14px;
+    }
+    
     .tabs {
         display: flex;
         gap: 8px;
@@ -106,8 +111,8 @@ $conn->close();
     
     .listings-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-        gap: 20px;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 24px;
     }
     
     .listing-card {
@@ -124,29 +129,36 @@ $conn->close();
     }
     
     .card-image {
-        height: 160px;
+        height: 200px;
         background: linear-gradient(135deg, #667eea, #764ba2);
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 48px;
         color: white;
+        overflow: hidden;
         position: relative;
     }
     
+    .card-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
     .card-content {
-        padding: 16px;
+        padding: 20px;
     }
     
     .listing-title {
-        font-size: 16px;
+        font-size: 18px;
         font-weight: 600;
         margin-bottom: 8px;
         color: #0f172a;
     }
     
     .listing-price {
-        font-size: 18px;
+        font-size: 20px;
         font-weight: 700;
         color: #667eea;
         margin-bottom: 12px;
@@ -157,9 +169,22 @@ $conn->close();
         justify-content: space-between;
         align-items: center;
         margin-bottom: 12px;
-        font-size: 12px;
+        font-size: 13px;
         color: #64748b;
     }
+    
+    .badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 500;
+        display: inline-block;
+    }
+    
+    .badge-success { background: #d1fae5; color: #059669; }
+    .badge-warning { background: #fed7aa; color: #ea580c; }
+    .badge-danger { background: #fee2e2; color: #dc2626; }
+    .badge-info { background: #dbeafe; color: #2563eb; }
     
     .payment-info {
         background: #fef3c7;
@@ -187,6 +212,7 @@ $conn->close();
         font-weight: 500;
         text-align: center;
         transition: all 0.3s;
+        flex: 1;
     }
     
     .btn-primary {
@@ -210,6 +236,7 @@ $conn->close();
     .btn-outline {
         border: 1px solid #e2e8f0;
         color: #64748b;
+        background: white;
     }
     
     .btn-outline:hover {
@@ -230,6 +257,16 @@ $conn->close();
         margin-bottom: 16px;
     }
     
+    .empty-state h3 {
+        font-size: 20px;
+        color: #334155;
+        margin-bottom: 8px;
+    }
+    
+    .empty-state p {
+        color: #64748b;
+    }
+    
     @media (max-width: 768px) {
         .listings-grid {
             grid-template-columns: 1fr;
@@ -237,6 +274,9 @@ $conn->close();
         .tabs {
             overflow-x: auto;
             flex-wrap: nowrap;
+        }
+        .action-buttons {
+            flex-direction: column;
         }
     }
 </style>
@@ -267,42 +307,69 @@ $conn->close();
 
 <?php if ($listings->num_rows > 0): ?>
     <div class="listings-grid">
-        <?php while($listing = $listings->fetch_assoc()): ?>
+        <?php while($listing = $listings->fetch_assoc()): 
+            $cover_image = $listing['cover_image'] ? '/broker_system/uploads/listings/' . $listing['cover_image'] : '';
+            $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
+        ?>
             <div class="listing-card">
                 <div class="card-image">
-                    <?php
-                    $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
-                    echo $icons[$listing['type']];
-                    ?>
+                    <?php if ($cover_image && file_exists(str_replace('/broker_system/', '../', $cover_image))): ?>
+                        <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>">
+                    <?php else: ?>
+                        <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 48px;">
+                            <?php echo $icons[$listing['type']]; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <div class="card-content">
                     <div class="listing-title"><?php echo htmlspecialchars($listing['title']); ?></div>
                     <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
                     <div class="listing-stats">
-                        <span class="badge <?php echo $listing['approval_status'] == 'approved' ? 'badge-success' : 'badge-warning'; ?>">
-                            <?php echo ucfirst($listing['approval_status']); ?>
-                        </span>
+                        <?php
+                        $status_badge = '';
+                        if ($listing['approval_status'] == 'approved' && $listing['status'] == 'active') {
+                            $status_badge = '<span class="badge badge-success">Active</span>';
+                        } elseif ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending') {
+                            $status_badge = '<span class="badge badge-warning">Awaiting Payment</span>';
+                        } elseif ($listing['approval_status'] == 'pending') {
+                            $status_badge = '<span class="badge badge-warning">Pending Approval</span>';
+                        } elseif ($listing['approval_status'] == 'rejected') {
+                            $status_badge = '<span class="badge badge-danger">Rejected</span>';
+                        } else {
+                            $status_badge = '<span class="badge badge-info">' . ucfirst($listing['approval_status']) . '</span>';
+                        }
+                        echo $status_badge;
+                        ?>
                         <span><i class="fas fa-eye"></i> <?php echo $listing['views']; ?> views</span>
                     </div>
                     
                     <?php if ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending'): ?>
                         <?php
-                        $deposit_amount = $listing['price'] * (($listing['admin_deposit_percent'] ?? 30) / 100);
-                        $commission_amount = $listing['price'] * (($listing['admin_commission_percent'] ?? 15) / 100);
+                        $deposit_percent = $listing['admin_deposit_percent'] ?? 30;
+                        $commission_percent = $listing['admin_commission_percent'] ?? 15;
+                        $deposit_amount = $listing['price'] * ($deposit_percent / 100);
+                        $commission_amount = $listing['price'] * ($commission_percent / 100);
                         $total_payment = $deposit_amount + $commission_amount;
                         ?>
                         <div class="payment-info">
                             <strong>Payment Required to Activate:</strong><br>
-                            Deposit: <?php echo formatMoney($deposit_amount); ?> + Commission: <?php echo formatMoney($commission_amount); ?>
-                            = <?php echo formatMoney($total_payment); ?>
+                            Deposit (<?php echo $deposit_percent; ?>%): <?php echo formatMoney($deposit_amount); ?> + 
+                            Commission (<?php echo $commission_percent; ?>%): <?php echo formatMoney($commission_amount); ?>
+                            = <strong><?php echo formatMoney($total_payment); ?></strong>
                         </div>
                         <div class="action-buttons">
-                            <a href="pay_listing.php?listing_id=<?php echo $listing['id']; ?>" class="btn btn-success" style="flex: 1;">Pay Now to Activate</a>
+                            <a href="pay_listing.php?listing_id=<?php echo $listing['id']; ?>" class="btn btn-success">
+                                <i class="fas fa-credit-card"></i> Pay Now
+                            </a>
                         </div>
                     <?php else: ?>
                         <div class="action-buttons">
-                            <a href="product.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline" style="flex: 1;">View</a>
-                            <a href="edit_listing.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline" style="flex: 1;">Edit</a>
+                            <a href="product.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                            <a href="edit_listing.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline">
+                                <i class="fas fa-edit"></i> Edit
+                            </a>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -314,7 +381,9 @@ $conn->close();
         <i class="fas fa-box-open"></i>
         <h3>No listings found</h3>
         <p>You haven't posted any listings yet.</p>
-        <a href="post_listing.php" class="btn btn-primary" style="display: inline-block; margin-top: 16px;">Create Your First Listing</a>
+        <a href="post_listing.php" class="btn btn-primary" style="display: inline-block; margin-top: 16px; padding: 10px 24px;">
+            <i class="fas fa-plus-circle"></i> Create Your First Listing
+        </a>
     </div>
 <?php endif; ?>
 
