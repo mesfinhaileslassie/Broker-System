@@ -1,5 +1,5 @@
 <?php
-// admin/chat.php - Chat Interface for Admin/Broker (UPDATED)
+// admin/chat.php - Admin Chat Interface with Clear History
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -29,7 +29,6 @@ if ($conversation_id > 0) {
     $current_conversation = getConversationById($conn, $conversation_id, $user_id);
     
     if ($current_conversation) {
-        // Use the new function with delete filter
         $messages = getMessagesWithDeleteFilter($conn, $conversation_id, $user_id, 100, 0);
         markMessagesAsRead($conn, $conversation_id, $user_id);
     }
@@ -75,11 +74,15 @@ $conn->close();
         .unread-badge { background: #ef4444; color: white; font-size: 10px; padding: 2px 6px; border-radius: 20px; min-width: 18px; text-align: center; display: inline-block; margin-top: 4px; }
         
         .chat-main { flex: 1; display: flex; flex-direction: column; height: 100vh; background: #f8fafc; }
-        .chat-header { padding: 16px 24px; background: white; border-bottom: 1px solid #e9ecef; display: flex; align-items: center; gap: 12px; }
+        .chat-header { padding: 16px 24px; background: white; border-bottom: 1px solid #e9ecef; display: flex; align-items: center; justify-content: space-between; }
+        .chat-header-left { display: flex; align-items: center; gap: 12px; }
+        .chat-header-right { display: flex; align-items: center; gap: 12px; }
         .back-btn { display: none; background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; }
         .chat-avatar { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; }
         .chat-header-info h3 { font-size: 16px; font-weight: 600; }
         .chat-header-info p { font-size: 12px; color: #64748b; }
+        .clear-history-btn { background: none; border: 1px solid #e2e8f0; padding: 6px 12px; border-radius: 20px; font-size: 12px; color: #64748b; cursor: pointer; transition: all 0.3s; }
+        .clear-history-btn:hover { background: #fee2e2; border-color: #ef4444; color: #ef4444; }
         
         .messages-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
         .message { display: flex; max-width: 70%; animation: fadeIn 0.3s ease; }
@@ -178,11 +181,18 @@ $conn->close();
         <div class="chat-main">
             <?php if ($current_conversation): ?>
                 <div class="chat-header">
-                    <button class="back-btn" onclick="toggleSidebar()"><i class="fas fa-arrow-left"></i></button>
-                    <div class="chat-avatar"><?php echo strtoupper(substr($current_conversation['other_user_name'], 0, 1)); ?></div>
-                    <div class="chat-header-info">
-                        <h3><?php echo htmlspecialchars($current_conversation['other_user_name']); ?></h3>
-                        <p id="typingStatus"></p>
+                    <div class="chat-header-left">
+                        <button class="back-btn" onclick="toggleSidebar()"><i class="fas fa-arrow-left"></i></button>
+                        <div class="chat-avatar"><?php echo strtoupper(substr($current_conversation['other_user_name'], 0, 1)); ?></div>
+                        <div class="chat-header-info">
+                            <h3><?php echo htmlspecialchars($current_conversation['other_user_name']); ?></h3>
+                            <p id="typingStatus"></p>
+                        </div>
+                    </div>
+                    <div class="chat-header-right">
+                        <button class="clear-history-btn" onclick="clearChatHistory()">
+                            <i class="fas fa-trash-alt"></i> Clear History
+                        </button>
                     </div>
                 </div>
 
@@ -254,11 +264,27 @@ $conn->close();
         </div>
     </div>
 
+    <!-- Clear History Confirmation Modal -->
+    <div id="clearHistoryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Clear Chat History</h3>
+                <span class="close-modal" onclick="closeClearHistoryModal()">&times;</span>
+            </div>
+            <p style="margin-bottom: 20px;">Are you sure you want to clear all messages in this conversation? This action cannot be undone.</p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button onclick="closeClearHistoryModal()" style="padding: 8px 16px; background: #94a3b8; color: white; border: none; border-radius: 8px; cursor: pointer;">Cancel</button>
+                <button onclick="confirmClearHistory()" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 8px; cursor: pointer;">Clear All</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         let conversationId = <?php echo $conversation_id; ?>;
         let userId = <?php echo $user_id; ?>;
         let pollInterval;
+        let typingTimeout;
 
         function scrollToBottom() {
             const messagesArea = document.getElementById('messagesArea');
@@ -326,6 +352,12 @@ $conn->close();
                             scrollToBottom();
                             $.post('../user/api/mark_read.php', { conversation_id: conversationId });
                             updateConversationList();
+                        } else if (currentMessageIds.length !== response.messages.length) {
+                            messagesArea.innerHTML = '';
+                            response.messages.forEach(msg => {
+                                appendMessage(msg);
+                            });
+                            scrollToBottom();
                         }
                     }
                 }
@@ -364,16 +396,68 @@ $conn->close();
             messagesArea.appendChild(messageDiv);
         }
 
+        function getEmojiForType(type) {
+            const emojis = { 'like': '👍', 'dislike': '👎', 'love': '❤️', 'laugh': '😂' };
+            return emojis[type] || '👍';
+        }
+
         function addReaction(messageId, type) {
+            const messageDiv = $(`.message[data-msg-id="${messageId}"]`);
+            const emoji = getEmojiForType(type);
+            const reactionBtn = messageDiv.find('.reaction-btn').filter(function() {
+                return $(this).text().trim().startsWith(emoji);
+            });
+            
+            const btnText = reactionBtn.text().trim();
+            const currentCount = parseInt(btnText.match(/\d+/)?.[0] || 0);
+            const isCurrentlyActive = reactionBtn.hasClass('active');
+            
+            if (isCurrentlyActive) {
+                const newCount = currentCount - 1;
+                reactionBtn.text(`${emoji} ${newCount > 0 ? newCount : ''}`);
+                reactionBtn.removeClass('active');
+            } else {
+                const newCount = currentCount + 1;
+                reactionBtn.text(`${emoji} ${newCount > 0 ? newCount : ''}`);
+                reactionBtn.addClass('active');
+                
+                messageDiv.find('.reaction-btn').not(reactionBtn).each(function() {
+                    const otherBtn = $(this);
+                    const otherText = otherBtn.text().trim();
+                    const otherCount = parseInt(otherText.match(/\d+/)?.[0] || 0);
+                    const otherEmoji = otherText.charAt(0);
+                    const newOtherCount = otherCount - 1;
+                    otherBtn.text(`${otherEmoji} ${newOtherCount > 0 ? newOtherCount : ''}`);
+                    otherBtn.removeClass('active');
+                });
+            }
+            
             $.ajax({
                 url: '../user/api/add_reaction.php',
                 method: 'POST',
                 data: { message_id: messageId, reaction_type: type },
                 success: function(response) {
-                    if (response.success) {
-                        loadMessages();
+                    if (response.success && response.reactions) {
+                        syncReactions(messageId, response.reactions);
                     }
+                },
+                error: function() {
+                    loadMessages();
                 }
+            });
+        }
+
+        function syncReactions(messageId, reactions) {
+            const messageDiv = $(`.message[data-msg-id="${messageId}"]`);
+            const reactionTypes = ['like', 'dislike', 'love', 'laugh'];
+            
+            reactionTypes.forEach(type => {
+                const count = reactions[type] || 0;
+                const emoji = getEmojiForType(type);
+                const btn = messageDiv.find('.reaction-btn').filter(function() {
+                    return $(this).text().trim().startsWith(emoji);
+                });
+                btn.text(`${emoji} ${count > 0 ? count : ''}`);
             });
         }
 
@@ -392,6 +476,47 @@ $conn->close();
                     }
                 });
             }
+        }
+
+        function clearChatHistory() {
+            if (!conversationId) return;
+            document.getElementById('clearHistoryModal').style.display = 'flex';
+        }
+
+        function closeClearHistoryModal() {
+            document.getElementById('clearHistoryModal').style.display = 'none';
+        }
+
+        function confirmClearHistory() {
+            if (!conversationId) return;
+            
+            $.ajax({
+                url: '../user/api/clear_history.php',
+                method: 'POST',
+                data: { conversation_id: conversationId },
+                success: function(response) {
+                    if (response.success) {
+                        document.getElementById('messagesArea').innerHTML = '';
+                        updateConversationList();
+                        closeClearHistoryModal();
+                        alert('Chat history cleared successfully');
+                    } else {
+                        alert('Failed to clear history: ' + (response.error || 'Unknown error'));
+                    }
+                },
+                error: function() {
+                    alert('Failed to clear history');
+                }
+            });
+        }
+
+        function sendTyping() {
+            if (!conversationId) return;
+            $.post('../user/api/typing.php', { conversation_id: conversationId, typing: true });
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                $.post('../user/api/typing.php', { conversation_id: conversationId, typing: false });
+            }, 1000);
         }
 
         function updateConversationList() {
@@ -424,11 +549,22 @@ $conn->close();
             pollInterval = setInterval(() => { loadMessages(); }, 3000);
         }
 
+        function checkTyping() {
+            if (!conversationId) return;
+            $.get('../user/api/typing.php', { conversation_id: conversationId }, function(response) {
+                const typingStatus = document.getElementById('typingStatus');
+                if (typingStatus) {
+                    typingStatus.textContent = response.typing ? 'Typing...' : '';
+                }
+            });
+        }
+
         const textarea = document.getElementById('messageInput');
         if (textarea) {
             textarea.addEventListener('input', function() {
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+                sendTyping();
             });
             textarea.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -447,13 +583,16 @@ $conn->close();
         if (conversationId) {
             startPolling();
             loadMessages();
+            setInterval(checkTyping, 2000);
             $.post('../user/api/mark_read.php', { conversation_id: conversationId });
             setTimeout(scrollToBottom, 500);
         }
 
         window.onclick = function(event) {
             const modal = document.getElementById('newChatModal');
+            const clearModal = document.getElementById('clearHistoryModal');
             if (event.target === modal) modal.style.display = 'none';
+            if (event.target === clearModal) clearModal.style.display = 'none';
         }
     </script>
 </body>
