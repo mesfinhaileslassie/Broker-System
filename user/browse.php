@@ -1,13 +1,9 @@
 <?php
-// user/browse.php - Browse Listings Page
+// user/browse.php - Browse Listings with Images
 
-// Set page title
 $page_title = 'Browse Listings';
-
-// Start output buffering
 ob_start();
 
-// Include database and functions
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
@@ -175,6 +171,13 @@ $conn->close();
         justify-content: center;
         font-size: 48px;
         color: white;
+        overflow: hidden;
+    }
+    
+    .card-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
     }
     
     .card-content {
@@ -250,11 +253,6 @@ $conn->close();
         margin-bottom: 16px;
     }
     
-    .empty-state h3 {
-        color: #334155;
-        margin-bottom: 8px;
-    }
-    
     @media (max-width: 768px) {
         .listings-grid {
             grid-template-columns: 1fr;
@@ -287,13 +285,19 @@ $conn->close();
 <!-- Listings Grid -->
 <?php if ($listings->num_rows > 0): ?>
     <div class="listings-grid">
-        <?php while($item = $listings->fetch_assoc()): ?>
+        <?php while($item = $listings->fetch_assoc()): 
+            $cover_image = $item['cover_image'] ? '/broker_system/uploads/listings/' . $item['cover_image'] : '';
+        ?>
             <div class="listing-card" onclick="location.href='product.php?id=<?php echo $item['id']; ?>'">
                 <div class="card-image">
-                    <?php
-                    $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
-                    echo $icons[$item['type']];
-                    ?>
+                    <?php if ($cover_image && file_exists(str_replace('/broker_system/', '../', $cover_image))): ?>
+                        <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($item['title']); ?>">
+                    <?php else: ?>
+                        <?php
+                        $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
+                        echo '<div style="display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:48px;">' . $icons[$item['type']] . '</div>';
+                        ?>
+                    <?php endif; ?>
                 </div>
                 <div class="card-content">
                     <span class="card-type"><?php echo ucfirst($item['type']); ?></span>
