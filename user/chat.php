@@ -298,6 +298,7 @@ $conn->close();
             });
         }
 
+            
         function loadMessages() {
             if (!conversationId) return;
             
@@ -308,34 +309,41 @@ $conn->close();
                 success: function(response) {
                     if (response.success && response.messages) {
                         const messagesArea = document.getElementById('messagesArea');
-                        messagesArea.innerHTML = '';
+                        const currentMessageIds = Array.from(messagesArea.querySelectorAll('.message')).map(el => parseInt(el.dataset.msgId));
+                        const newMessages = response.messages.filter(msg => !currentMessageIds.includes(msg.id));
                         
-                        response.messages.forEach(msg => {
-                            const isSent = msg.sender_id == userId;
-                            const messageDiv = document.createElement('div');
-                            messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
-                            messageDiv.setAttribute('data-msg-id', msg.id);
-                            messageDiv.innerHTML = `
-                                <div class="message-bubble">
-                                    ${escapeHtml(msg.message)}
-                                    <div class="message-time">
-                                        ${msg.time}
+                        if (newMessages.length > 0) {
+                            // Only add new messages, don't re-render everything
+                            newMessages.forEach(msg => {
+                                const isSent = msg.sender_id == userId;
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+                                messageDiv.setAttribute('data-msg-id', msg.id);
+                                messageDiv.innerHTML = `
+                                    <div class="message-bubble">
+                                        ${escapeHtml(msg.message)}
+                                        <div class="message-time">
+                                            ${msg.time}
+                                        </div>
+                                        <div class="message-reactions" id="reactions-${msg.id}">
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'like')">👍</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'dislike')">👎</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'love')">❤️</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'laugh')">😂</button>
+                                            <span class="reaction-count" id="reaction-count-${msg.id}"></span>
+                                        </div>
                                     </div>
-                                    <div class="message-reactions" id="reactions-${msg.id}">
-                                        <button class="reaction-btn" onclick="addReaction(${msg.id}, 'like')">👍</button>
-                                        <button class="reaction-btn" onclick="addReaction(${msg.id}, 'dislike')">👎</button>
-                                        <button class="reaction-btn" onclick="addReaction(${msg.id}, 'love')">❤️</button>
-                                        <button class="reaction-btn" onclick="addReaction(${msg.id}, 'laugh')">😂</button>
-                                        <span class="reaction-count" id="reaction-count-${msg.id}"></span>
-                                    </div>
-                                </div>
-                            `;
-                            messagesArea.appendChild(messageDiv);
-                        });
-                        
-                        scrollToBottom();
-                        $.post('api/mark_read.php', { conversation_id: conversationId });
-                        updateConversationList();
+                                `;
+                                messagesArea.appendChild(messageDiv);
+                            });
+                            
+                            // Only scroll if new message was added
+                            scrollToBottom();
+                            
+                            // Mark as read
+                            $.post('api/mark_read.php', { conversation_id: conversationId });
+                            updateConversationList();
+                        }
                     }
                 }
             });

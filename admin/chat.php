@@ -693,48 +693,53 @@ $conn->close();
         }
 
         // Load messages
+        
         function loadMessages() {
             if (!conversationId) return;
             
             $.ajax({
-                url: '../user/api/get_messages.php',
+                url: 'api/get_messages.php',
                 method: 'GET',
-                data: {
-                    conversation_id: conversationId
-                },
+                data: { conversation_id: conversationId },
                 success: function(response) {
                     if (response.success && response.messages) {
-                        // Clear messages area and repopulate
                         const messagesArea = document.getElementById('messagesArea');
-                        const currentMessages = messagesArea.querySelectorAll('.message');
-                        const currentIds = Array.from(currentMessages).map(el => parseInt(el.dataset.msgId));
+                        const currentMessageIds = Array.from(messagesArea.querySelectorAll('.message')).map(el => parseInt(el.dataset.msgId));
+                        const newMessages = response.messages.filter(msg => !currentMessageIds.includes(msg.id));
                         
-                        // Add new messages
-                        response.messages.forEach(msg => {
-                            if (!currentIds.includes(msg.id)) {
-                                appendMessage(msg);
-                            }
-                        });
-                        
-                        // Scroll to bottom for new messages
-                        if (response.messages.length > 0) {
+                        if (newMessages.length > 0) {
+                            // Only add new messages, don't re-render everything
+                            newMessages.forEach(msg => {
+                                const isSent = msg.sender_id == userId;
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+                                messageDiv.setAttribute('data-msg-id', msg.id);
+                                messageDiv.innerHTML = `
+                                    <div class="message-bubble">
+                                        ${escapeHtml(msg.message)}
+                                        <div class="message-time">
+                                            ${msg.time}
+                                        </div>
+                                        <div class="message-reactions" id="reactions-${msg.id}">
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'like')">👍</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'dislike')">👎</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'love')">❤️</button>
+                                            <button class="reaction-btn" onclick="addReaction(${msg.id}, 'laugh')">😂</button>
+                                            <span class="reaction-count" id="reaction-count-${msg.id}"></span>
+                                        </div>
+                                    </div>
+                                `;
+                                messagesArea.appendChild(messageDiv);
+                            });
+                            
+                            // Only scroll if new message was added
                             scrollToBottom();
+                            
+                            // Mark as read
+                            $.post('api/mark_read.php', { conversation_id: conversationId });
+                            updateConversationList();
                         }
-                        
-                        // Mark as read
-                        $.post('../user/api/mark_read.php', { conversation_id: conversationId });
-                        
-                        // Update last message ID
-                        if (response.messages.length > 0) {
-                            lastMessageId = response.messages[response.messages.length - 1].id;
-                        }
-                        
-                        // Update unread counts in sidebar
-                        updateConversationList();
                     }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error loading messages:', error);
                 }
             });
         }
