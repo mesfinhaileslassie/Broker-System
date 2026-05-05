@@ -1,5 +1,5 @@
 <?php
-// user/post_listing.php - Post new listing with images and admin approval
+// user/post_listing.php - Post new listing with image upload (FIXED)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -15,6 +15,12 @@ $success = '';
 // Get categories
 $categories = $conn->query("SELECT * FROM categories WHERE is_active = 1 ORDER BY type, name");
 
+// Create uploads directory if not exists
+$upload_dir = '../uploads/listings/';
+if (!file_exists($upload_dir)) {
+    mkdir($upload_dir, 0777, true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'];
     $title = trim($_POST['title']);
@@ -27,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle cover image
     $cover_image = '';
     if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-        $upload = uploadImage($_FILES['cover_image']);
+        $upload = uploadImage($_FILES['cover_image'], $upload_dir);
         if ($upload['success']) {
             $cover_image = $upload['filename'];
         } else {
@@ -46,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'size' => $_FILES['gallery_images']['size'][$key],
                     'error' => $_FILES['gallery_images']['error'][$key]
                 ];
-                $upload = uploadImage($file);
+                $upload = uploadImage($file, $upload_dir);
                 if ($upload['success']) {
                     $gallery_images[] = $upload['filename'];
                 }
@@ -69,10 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $listing_id = $conn->insert_id;
             
             // Create admin notification
-            $stmt2 = $conn->prepare("INSERT INTO admin_notifications (type, title, message, listing_id, user_id) VALUES ('new_listing', 'New Listing Pending Approval', ?, ?, ?)");
-            $message = "User {$_SESSION['user_name']} posted a new {$type}: {$title} for {$price} ETB";
-            $stmt2->bind_param("sii", $message, $listing_id, $user_id);
-            $stmt2->execute();
+            $message = "New listing '{$title}' posted by user ID: {$user_id}";
+            $conn->query("INSERT INTO admin_notifications (type, title, message, listing_id, user_id) VALUES ('new_listing', 'New Listing Pending Approval', '{$message}', {$listing_id}, {$user_id})");
             
             $success = "Listing submitted for admin approval. You will be notified once approved.";
             header("Refresh: 3; URL=dashboard.php");
@@ -90,61 +94,74 @@ $conn->close();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Post New Listing - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #f5f6fa; }
-        .header { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 16px 24px; }
-        .header-content { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+        
+        .header { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 16px 24px; }
+        .header-content { max-width: 800px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
         .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
+        
         .container { max-width: 800px; margin: 40px auto; padding: 0 24px; }
-        .card { background: white; border-radius: 12px; padding: 32px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .card h1 { font-size: 24px; margin-bottom: 8px; color: #333; }
-        .card h1 small { font-size: 14px; color: #888; font-weight: normal; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
-        input, select, textarea { width: 100%; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; }
+        .card { background: white; border-radius: 24px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .card h1 { font-size: 24px; margin-bottom: 8px; }
+        
+        .form-group { margin-bottom: 24px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #1e293b; }
+        input, select, textarea { width: 100%; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-family: inherit; transition: all 0.3s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
         textarea { resize: vertical; min-height: 120px; }
-        button { width: 100%; padding: 14px; background: #667eea; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
-        button:hover { background: #5a67d8; }
-        .error { background: #fee; color: #c33; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .success { background: #d4edda; color: #155724; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
-        .image-preview { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
-        .preview-item { position: relative; width: 100px; height: 100px; }
-        .preview-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
-        .remove-image { position: absolute; top: -8px; right: -8px; background: red; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; }
-        .type-selector { display: flex; gap: 12px; margin-bottom: 20px; }
-        .type-option { flex: 1; padding: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center; cursor: pointer; transition: all 0.3s; }
+        
+        .type-selector { display: flex; gap: 12px; margin-bottom: 24px; }
+        .type-option { flex: 1; padding: 16px; border: 2px solid #e2e8f0; border-radius: 16px; text-align: center; cursor: pointer; transition: all 0.3s; }
         .type-option.selected { border-color: #667eea; background: #f0f4ff; }
         .type-option i { font-size: 24px; margin-bottom: 8px; display: block; }
-        .info-text { font-size: 12px; color: #888; margin-top: 4px; }
-        .approval-info { background: #e3f2fd; padding: 16px; border-radius: 8px; margin-top: 20px; text-align: center; }
+        
+        .image-preview { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+        .preview-item { position: relative; width: 100px; height: 100px; }
+        .preview-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 2px solid #e2e8f0; }
+        .remove-image { position: absolute; top: -8px; right: -8px; background: #ef4444; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; }
+        
+        .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 40px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        
+        .error { background: #fee2e2; color: #dc2626; padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; }
+        .success { background: #d1fae5; color: #059669; padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; }
+        .info-text { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .approval-info { background: #fef3c7; padding: 16px; border-radius: 12px; margin-top: 20px; text-align: center; color: #92400e; font-size: 13px; }
+        
+        @media (max-width: 640px) {
+            .container { padding: 0 16px; }
+            .card { padding: 24px; }
+            .type-selector { flex-direction: column; }
+            .preview-item { width: 80px; height: 80px; }
+        }
     </style>
 </head>
 <body>
     <header class="header">
         <div class="header-content">
             <a href="/broker_system/index.php" class="logo">🏪 Ethio Brokerplace</a>
-            <a href="dashboard.php" style="color: #666;"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+            <a href="dashboard.php" style="color: #64748b;"><i class="fas fa-arrow-left"></i> Dashboard</a>
         </div>
     </header>
     
     <div class="container">
         <div class="card">
             <h1><i class="fas fa-plus-circle"></i> Post New Listing</h1>
-            <p style="color: #666; margin-bottom: 24px;">Your listing will be reviewed by admin before going live</p>
+            <p style="color: #64748b; margin-bottom: 24px;">Your listing will be reviewed by admin before going live</p>
             
             <?php if ($error): ?>
-                <div class="error"><i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?></div>
+                <div class="error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
             
             <?php if ($success): ?>
                 <div class="success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?></div>
             <?php endif; ?>
             
-            <form method="POST" enctype="multipart/form-data" id="listingForm">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="type-selector" id="typeSelector">
                     <div class="type-option" data-type="product" onclick="selectType('product')">
                         <i class="fas fa-box"></i>
@@ -157,7 +174,7 @@ $conn->close();
                         <small>Hire or find work</small>
                     </div>
                     <div class="type-option" data-type="rental" onclick="selectType('rental')">
-                        <i class="fas fa-home"></i>
+                        <i class="fas fa-home</i>
                         <strong>Rental</strong>
                         <small>Rent items or property</small>
                     </div>
@@ -218,65 +235,67 @@ $conn->close();
                     <div id="galleryPreview" class="image-preview"></div>
                 </div>
                 
-                <button type="submit"><i class="fas fa-paper-plane"></i> Submit for Admin Review</button>
+                <button type="submit" class="btn"><i class="fas fa-paper-plane"></i> Submit for Review</button>
             </form>
             
             <div class="approval-info">
-                <i class="fas fa-clock"></i> <strong>Note:</strong> Your listing will be reviewed by an admin. You'll be notified once approved. After approval, you'll need to pay the required deposit and commission before your listing goes live.
+                <i class="fas fa-clock"></i> <strong>Note:</strong> Your listing will be reviewed by an admin. You'll be notified once approved.
             </div>
         </div>
     </div>
     
     <script>
-        let coverImages = [];
-        let galleryImages = [];
-        
         function selectType(type) {
             document.getElementById('listingType').value = type;
-            document.querySelectorAll('.type-option').forEach(opt => {
-                opt.classList.remove('selected');
-            });
+            document.querySelectorAll('.type-option').forEach(opt => opt.classList.remove('selected'));
             document.querySelector(`.type-option[data-type="${type}"]`).classList.add('selected');
             
-            // Filter categories by type
             const categorySelect = document.querySelector('select[name="category_id"]');
             for (let i = 0; i < categorySelect.options.length; i++) {
                 const option = categorySelect.options[i];
                 if (option.value === '') continue;
                 const optionType = option.getAttribute('data-type');
-                if (optionType === type) {
-                    option.style.display = '';
-                } else {
-                    option.style.display = 'none';
-                }
+                option.style.display = optionType === type ? '' : 'none';
             }
         }
+        
+        let coverImageFile = null;
+        let galleryFiles = [];
         
         function previewCoverImage(input) {
             const preview = document.getElementById('coverPreview');
             preview.innerHTML = '';
             if (input.files && input.files[0]) {
+                coverImageFile = input.files[0];
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const div = document.createElement('div');
                     div.className = 'preview-item';
-                    div.innerHTML = `<img src="${e.target.result}" alt="Cover"><div class="remove-image" onclick="this.parentElement.remove()">×</div>`;
+                    div.innerHTML = `<img src="${e.target.result}" alt="Cover"><div class="remove-image" onclick="removeCoverImage()">×</div>`;
                     preview.appendChild(div);
                 }
                 reader.readAsDataURL(input.files[0]);
             }
         }
         
+        function removeCoverImage() {
+            document.getElementById('coverPreview').innerHTML = '';
+            document.querySelector('input[name="cover_image"]').value = '';
+            coverImageFile = null;
+        }
+        
         function previewGalleryImages(input) {
             const preview = document.getElementById('galleryPreview');
             preview.innerHTML = '';
+            galleryFiles = [];
             if (input.files) {
-                Array.from(input.files).forEach(file => {
+                Array.from(input.files).forEach((file, index) => {
+                    galleryFiles.push(file);
                     const reader = new FileReader();
                     reader.onload = function(e) {
                         const div = document.createElement('div');
                         div.className = 'preview-item';
-                        div.innerHTML = `<img src="${e.target.result}" alt="Gallery"><div class="remove-image" onclick="this.parentElement.remove()">×</div>`;
+                        div.innerHTML = `<img src="${e.target.result}" alt="Gallery"><div class="remove-image" onclick="removeGalleryImage(${index})">×</div>`;
                         preview.appendChild(div);
                     }
                     reader.readAsDataURL(file);
@@ -284,7 +303,15 @@ $conn->close();
             }
         }
         
-        // Initialize with product type
+        function removeGalleryImage(index) {
+            galleryFiles.splice(index, 1);
+            const input = document.querySelector('input[name="gallery_images[]"]');
+            const dt = new DataTransfer();
+            galleryFiles.forEach(file => dt.items.add(file));
+            input.files = dt.files;
+            previewGalleryImages(input);
+        }
+        
         selectType('product');
     </script>
 </body>

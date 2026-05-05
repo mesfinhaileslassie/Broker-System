@@ -1,5 +1,5 @@
 <?php
-// user/product.php - View single product and initiate purchase with immediate code generation
+// user/product.php - View single product with image display
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -42,10 +42,8 @@ $totalUpfront = $depositAmount + $commissionAmount;
 $remainingAmount = $listing['price'] - $depositAmount;
 
 $error = '';
-$generated_code = '';
-$transaction_id = 0;
 
-// Handle purchase initiation - GENERATE CODE IMMEDIATELY
+// Handle purchase initiation
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && $can_purchase) {
     $buyer_id = $user_id;
     
@@ -59,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && $can_p
     if ($stmt->execute()) {
         $transaction_id = $conn->insert_id;
         
-        // Generate a unique 5-digit payment code
+        // Generate unique 5-digit payment code
         do {
             $new_code = str_pad(random_int(0, 99999), 5, '0', STR_PAD_LEFT);
             $check_code = $conn->query("SELECT id FROM payment_codes WHERE code = '$new_code'");
@@ -67,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && $can_p
         
         $expires_at = date('Y-m-d H:i:s', strtotime('+10 minutes'));
         
-        // Store payment code in payment_codes table
+        // Store payment code
         $stmt2 = $conn->prepare("
             INSERT INTO payment_codes (code, transaction_id, amount, user_id, type, expires_at, status) 
             VALUES (?, ?, ?, ?, 'deposit_buyer', ?, 'pending')
@@ -75,14 +73,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && $can_p
         $stmt2->bind_param("siids", $new_code, $transaction_id, $totalUpfront, $buyer_id, $expires_at);
         $stmt2->execute();
         
-        $generated_code = $new_code;
-        
-        // Redirect to transaction page with the code
-        header("Location: transaction.php?id=$transaction_id&code=$generated_code");
+        // Redirect to transaction page with code
+        header("Location: transaction.php?id=$transaction_id&code=$new_code");
         exit;
     } else {
         $error = "Failed to create transaction. Please try again.";
     }
+}
+
+// Get gallery images
+$cover_image = $listing['cover_image'] ? '/broker_system/uploads/listings/' . $listing['cover_image'] : '';
+$gallery_images = $listing['gallery_images'] ? json_decode($listing['gallery_images'], true) : [];
+$gallery_paths = [];
+foreach ($gallery_images as $img) {
+    $gallery_paths[] = '/broker_system/uploads/listings/' . $img;
 }
 
 $conn->close();
@@ -109,6 +113,12 @@ $conn->close();
         .listing-type { display: inline-block; padding: 6px 12px; background: #f1f5f9; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
         .title { font-size: 28px; font-weight: 700; margin-bottom: 16px; color: #0f172a; }
         .price { font-size: 32px; font-weight: 700; color: #667eea; margin-bottom: 16px; }
+        
+        .product-image { width: 100%; border-radius: 16px; margin-bottom: 20px; object-fit: cover; max-height: 400px; }
+        .gallery { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .gallery img { width: 100px; height: 100px; object-fit: cover; border-radius: 12px; cursor: pointer; border: 2px solid transparent; transition: all 0.3s; }
+        .gallery img:hover { border-color: #667eea; transform: scale(1.05); }
+        
         .seller-info { padding: 16px; background: #f8fafc; border-radius: 16px; margin-bottom: 24px; }
         .description { margin-top: 24px; }
         .description h3 { margin-bottom: 12px; font-size: 18px; }
@@ -148,6 +158,24 @@ $conn->close();
             </span>
             <h1 class="title"><?php echo htmlspecialchars($listing['title']); ?></h1>
             <div class="price"><?php echo formatMoney($listing['price']); ?></div>
+            
+            <!-- Cover Image -->
+            <?php if ($cover_image): ?>
+                <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>" class="product-image" id="mainImage">
+            <?php else: ?>
+                <div style="height: 300px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                    <i class="fas fa-image" style="font-size: 64px; color: white;"></i>
+                </div>
+            <?php endif; ?>
+            
+            <!-- Gallery Images -->
+            <?php if (!empty($gallery_paths)): ?>
+                <div class="gallery">
+                    <?php foreach ($gallery_paths as $index => $img): ?>
+                        <img src="<?php echo $img; ?>" alt="Gallery image <?php echo $index + 1; ?>" onclick="document.getElementById('mainImage').src = this.src">
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
             
             <div class="seller-info">
                 <i class="fas fa-store"></i> Sold by: <strong><?php echo htmlspecialchars($listing['seller_name']); ?></strong><br>

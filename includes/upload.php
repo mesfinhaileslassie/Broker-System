@@ -1,5 +1,5 @@
 <?php
-// includes/upload.php - Image upload handling
+// includes/upload.php - Image upload handling (FIXED)
 
 function uploadImage($file, $targetDir = '../uploads/listings/') {
     // Create directory if not exists

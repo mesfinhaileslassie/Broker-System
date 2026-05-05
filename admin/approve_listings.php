@@ -1,5 +1,5 @@
 <?php
-// admin/approve_listings.php - Approve Listings with proper styling
+// admin/approve_listings.php - Approve Listings with image display
 
 $page_title = 'Approve Listings';
 ob_start();
@@ -57,7 +57,6 @@ $conn->close();
 ?>
 
 <style>
-    /* Stats Grid */
     .stats-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -94,7 +93,6 @@ $conn->close();
         margin-top: 8px;
     }
     
-    /* Message Alerts */
     .alert {
         padding: 14px 18px;
         border-radius: 16px;
@@ -122,7 +120,6 @@ $conn->close();
         border-left: 4px solid #dc2626;
     }
     
-    /* Listing Card */
     .listing-card {
         background: white;
         border-radius: 20px;
@@ -182,6 +179,16 @@ $conn->close();
         color: #1e293b;
     }
     
+    .listing-image {
+        margin: 16px 0;
+    }
+    
+    .listing-image img {
+        max-width: 100%;
+        border-radius: 12px;
+        object-fit: cover;
+    }
+    
     .listing-description {
         background: #f8fafc;
         padding: 16px;
@@ -198,7 +205,6 @@ $conn->close();
         margin-bottom: 8px;
     }
     
-    /* Form Styles */
     .form-row {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -242,18 +248,12 @@ $conn->close();
         resize: vertical;
     }
     
-    .form-group textarea:focus {
-        outline: none;
-        border-color: #667eea;
-    }
-    
     .info-text {
         font-size: 11px;
         color: #64748b;
         margin-top: 4px;
     }
     
-    /* Buttons */
     .btn-group {
         display: flex;
         gap: 12px;
@@ -292,15 +292,6 @@ $conn->close();
         box-shadow: 0 4px 12px rgba(239,68,68,0.3);
     }
     
-    .btn-secondary {
-        background: #64748b;
-        color: white;
-    }
-    
-    .btn-secondary:hover {
-        background: #475569;
-    }
-    
     .reject-form {
         display: none;
         margin-top: 20px;
@@ -312,7 +303,6 @@ $conn->close();
         display: block;
     }
     
-    /* Empty State */
     .empty-state {
         text-align: center;
         padding: 60px;
@@ -334,45 +324,18 @@ $conn->close();
         margin-bottom: 8px;
     }
     
-    .empty-state p {
-        color: #64748b;
-    }
-    
-    /* Responsive */
     @media (max-width: 768px) {
-        .stats-grid {
-            grid-template-columns: 1fr;
-        }
-        
-        .listing-header {
-            flex-direction: column;
-        }
-        
-        .form-row {
-            grid-template-columns: 1fr;
-        }
-        
-        .btn-group {
-            flex-direction: column;
-        }
-        
-        .btn {
-            width: 100%;
-            text-align: center;
-        }
-        
-        .detail-row {
-            flex-direction: column;
-        }
-        
-        .detail-label {
-            width: auto;
-            margin-bottom: 4px;
-        }
+        .stats-grid { grid-template-columns: 1fr; }
+        .listing-header { flex-direction: column; }
+        .form-row { grid-template-columns: 1fr; }
+        .btn-group { flex-direction: column; }
+        .btn { width: 100%; text-align: center; }
+        .detail-row { flex-direction: column; }
+        .detail-label { width: auto; margin-bottom: 4px; }
+        .listing-image img { max-width: 100%; }
     }
 </style>
 
-<!-- Statistics Cards -->
 <div class="stats-grid">
     <div class="stat-card pending">
         <div class="stat-value"><?php echo $stats['pending']; ?></div>
@@ -409,6 +372,13 @@ $conn->close();
                 <div class="listing-title"><?php echo htmlspecialchars($listing['title']); ?></div>
                 <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
             </div>
+            
+            <!-- Display Cover Image -->
+            <?php if ($listing['cover_image']): ?>
+                <div class="listing-image">
+                    <img src="/broker_system/uploads/listings/<?php echo $listing['cover_image']; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>">
+                </div>
+            <?php endif; ?>
             
             <div class="listing-details">
                 <div class="detail-row">
@@ -473,7 +443,7 @@ $conn->close();
                         <textarea name="rejection_reason" rows="3" placeholder="Explain why this listing is being rejected..."></textarea>
                         <div class="info-text">This reason will be shared with the seller</div>
                     </div>
-                    <button type="submit" name="reject_listing" class="btn btn-secondary" onclick="return confirm('Reject this listing?')">
+                    <button type="submit" name="reject_listing" class="btn btn-secondary" style="background: #64748b; color: white;" onclick="return confirm('Reject this listing?')">
                         Confirm Rejection
                     </button>
                 </div>

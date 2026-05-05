@@ -1,5 +1,5 @@
 <?php
-// user/layout.php - Shared layout for user pages with Chat
+// user/layout.php - Shared layout for user pages with working notifications
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -22,7 +22,7 @@ $user_email = $_SESSION['user_email'];
 $notifications_count = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE user_id = $user_id AND is_read = 0")->fetch_assoc()['count'];
 $pending_legal_count = $conn->query("SELECT COUNT(*) as count FROM transactions t WHERE (t.buyer_id = $user_id OR t.seller_id = $user_id) AND t.status = 'deposits_complete' AND ((t.buyer_legal_confirmed = 0 AND t.buyer_id = $user_id) OR (t.seller_legal_confirmed = 0 AND t.seller_id = $user_id))")->fetch_assoc()['count'];
 $unread_chat_count = getUnreadMessageCount($conn, $user_id);
-$recent_notifications = $conn->query("SELECT * FROM notifications WHERE user_id = $user_id ORDER BY created_at DESC LIMIT 5");
+$notifications = $conn->query("SELECT * FROM notifications WHERE user_id = $user_id ORDER BY created_at DESC LIMIT 5");
 
 $conn->close();
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -127,15 +127,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
         .page-title { font-size: 24px; font-weight: 700; color: #0f172a; }
         .top-bar-actions { display: flex; align-items: center; gap: 20px; }
         
+        /* Notification Dropdown - Fixed */
         .notification-dropdown { position: relative; }
         .notification-icon { position: relative; cursor: pointer; padding: 8px; border-radius: 50%; transition: background 0.3s; }
         .notification-icon:hover { background: #f1f5f9; }
         .notification-badge { position: absolute; top: 0; right: 0; background: #ef4444; color: white; font-size: 10px; padding: 2px 5px; border-radius: 10px; }
         .dropdown-menu { position: absolute; top: 100%; right: 0; width: 320px; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); display: none; z-index: 1000; margin-top: 8px; }
-        .notification-dropdown:hover .dropdown-menu { display: block; }
+        .dropdown-menu.show { display: block; }
         .dropdown-header { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
         .dropdown-header h4 { font-size: 14px; font-weight: 600; }
-        .dropdown-header a { font-size: 11px; color: #667eea; text-decoration: none; }
+        .dropdown-header a { font-size: 11px; color: #667eea; text-decoration: none; cursor: pointer; }
         .notification-item { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background 0.3s; }
         .notification-item:hover { background: #f8fafc; }
         .notification-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
@@ -144,8 +145,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
         
         .user-dropdown { position: relative; cursor: pointer; }
         .user-avatar { width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; }
-        .user-menu { position: absolute; top: 100%; right: 0; width: 200px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); display: none; margin-top: 8px; }
-        .user-dropdown:hover .user-menu { display: block; }
+        .user-menu { position: absolute; top: 100%; right: 0; width: 200px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); display: none; margin-top: 8px; z-index: 1000; }
+        .user-menu.show { display: block; }
         .user-menu-item { padding: 10px 16px; display: flex; align-items: center; gap: 10px; color: #334155; text-decoration: none; transition: background 0.3s; }
         .user-menu-item:hover { background: #f1f5f9; }
         
@@ -238,20 +239,21 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <div class="top-bar">
             <h1 class="page-title"><?php echo $page_title ?? 'Dashboard'; ?></h1>
             <div class="top-bar-actions">
+                <!-- Notifications Dropdown - Fixed -->
                 <div class="notification-dropdown">
-                    <div class="notification-icon">
+                    <div class="notification-icon" id="notificationIcon">
                         <i class="fas fa-bell"></i>
                         <?php if ($notifications_count > 0): ?>
                             <span class="notification-badge"><?php echo $notifications_count; ?></span>
                         <?php endif; ?>
                     </div>
-                    <div class="dropdown-menu">
+                    <div class="dropdown-menu" id="notificationDropdown">
                         <div class="dropdown-header">
                             <h4>Notifications</h4>
-                            <a href="dashboard.php?mark_read=1">Mark all read</a>
+                            <a href="#" id="markAllRead">Mark all read</a>
                         </div>
-                        <?php if ($recent_notifications && $recent_notifications->num_rows > 0): ?>
-                            <?php while($notif = $recent_notifications->fetch_assoc()): ?>
+                        <?php if ($notifications && $notifications->num_rows > 0): ?>
+                            <?php while($notif = $notifications->fetch_assoc()): ?>
                                 <div class="notification-item">
                                     <div class="notification-title"><?php echo htmlspecialchars($notif['title']); ?></div>
                                     <div class="notification-message"><?php echo htmlspecialchars($notif['message']); ?></div>
@@ -263,9 +265,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         <?php endif; ?>
                     </div>
                 </div>
+
+                <!-- User Dropdown -->
                 <div class="user-dropdown">
-                    <div class="user-avatar"><?php echo strtoupper(substr($user_name, 0, 1)); ?></div>
-                    <div class="user-menu">
+                    <div class="user-avatar" id="userAvatar"><?php echo strtoupper(substr($user_name, 0, 1)); ?></div>
+                    <div class="user-menu" id="userMenu">
                         <a href="profile.php" class="user-menu-item"><i class="fas fa-user"></i> Profile</a>
                         <a href="wallet.php" class="user-menu-item"><i class="fas fa-wallet"></i> Wallet</a>
                         <a href="settings.php" class="user-menu-item"><i class="fas fa-cog"></i> Settings</a>
@@ -281,6 +285,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </div>
     
     <script>
+        // Sidebar collapse
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const collapseBtn = document.getElementById('collapseBtn');
@@ -310,6 +315,53 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 icon.classList.add('fa-chevron-right');
             }
         }
+        
+        // Notification dropdown functionality - FIXED
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        
+        if (notificationIcon) {
+            notificationIcon.addEventListener('click', function(e) {
+                e.stopPropagation();
+                notificationDropdown.classList.toggle('show');
+                // Close user dropdown if open
+                if (userMenu) userMenu.classList.remove('show');
+            });
+        }
+        
+        // User dropdown functionality
+        const userAvatar = document.getElementById('userAvatar');
+        const userMenu = document.getElementById('userMenu');
+        
+        if (userAvatar) {
+            userAvatar.addEventListener('click', function(e) {
+                e.stopPropagation();
+                userMenu.classList.toggle('show');
+                // Close notification dropdown if open
+                if (notificationDropdown) notificationDropdown.classList.remove('show');
+            });
+        }
+        
+        // Mark all notifications as read
+        const markAllRead = document.getElementById('markAllRead');
+        if (markAllRead) {
+            markAllRead.addEventListener('click', function(e) {
+                e.preventDefault();
+                fetch('/broker_system/user/api/mark_notifications_read.php')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        }
+                    });
+            });
+        }
+        
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function() {
+            if (notificationDropdown) notificationDropdown.classList.remove('show');
+            if (userMenu) userMenu.classList.remove('show');
+        });
     </script>
 </body>
 </html>
