@@ -209,7 +209,21 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-credit-card"></i>
                 <span class="menu-label">Payments</span>
             </a>
-            
+
+                <a href="chat.php" class="menu-item <?php echo $current_page == 'chat.php' ? 'active' : ''; ?>">
+                <i class="fas fa-comments"></i>
+                <span class="menu-label">Chat</span>
+                <?php
+                // Get unread chat count for admin
+                require_once '../includes/chat_functions.php';
+                $conn = getDbConnection();
+                $unread_chat_count = getUnreadMessageCount($conn, $_SESSION['user_id']);
+                $conn->close();
+                if ($unread_chat_count > 0): ?>
+                    <span class="badge-count"><?php echo $unread_chat_count; ?></span>
+                <?php endif; ?>
+            </a>
+                        
             <!-- Management Section -->
             <div class="section-header">Management</div>
             <a href="approve_listings.php" class="menu-item <?php echo $current_page == 'approve_listings.php' ? 'active' : ''; ?>">
@@ -232,6 +246,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-envelope"></i>
                 <span class="menu-label">Messages</span>
             </a>
+
+
             
             <!-- Analytics & Settings -->
             <div class="section-header">Insights</div>

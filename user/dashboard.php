@@ -387,6 +387,7 @@ $conn->close();
     <a href="post_listing.php" class="action-btn"><i class="fas fa-plus-circle"></i> New Listing</a>
     <a href="browse.php" class="action-btn"><i class="fas fa-search"></i> Browse</a>
     <a href="wallet.php" class="action-btn"><i class="fas fa-wallet"></i> Wallet</a>
+    <a href="chat.php" class="action-btn"><i class="fas fa-comments"></i> Messages</a>
 </div>
 
 <!-- Stats Cards -->
