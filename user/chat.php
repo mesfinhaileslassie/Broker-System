@@ -1,5 +1,5 @@
 <?php
-// user/chat.php - Complete Chat Interface with Clear History
+// user/chat.php - Complete Chat Interface with Fixed Typing Indicator
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -12,7 +12,7 @@ $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
 $conversation_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
-// Get broker/admin users
+// Get broker/admin users for new conversations
 $brokers = $conn->query("SELECT id, full_name, email FROM users WHERE role IN ('admin', 'broker') ORDER BY full_name");
 
 // Get user's conversations
@@ -70,6 +70,32 @@ $conn->close();
         .conversation-time { font-size: 10px; color: #94a3b8; }
         .unread-badge { background: #ef4444; color: white; font-size: 10px; padding: 2px 6px; border-radius: 20px; min-width: 18px; text-align: center; display: inline-block; margin-top: 4px; }
         
+        /* Typing Indicator Animation */
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 18px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: #64748b;
+            border-radius: 50%;
+            animation: typingAnimation 1.4s infinite ease-in-out;
+        }
+        .typing-dot:nth-child(1) { animation-delay: 0s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingAnimation {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+        
         /* Chat Main */
         .chat-main { flex: 1; display: flex; flex-direction: column; height: 100vh; background: #f8fafc; }
         .chat-header { padding: 16px 24px; background: white; border-bottom: 1px solid #e9ecef; display: flex; align-items: center; justify-content: space-between; }
@@ -87,7 +113,7 @@ $conn->close();
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .message.sent { align-self: flex-end; }
         .message.received { align-self: flex-start; }
-        .message-bubble { padding: 10px 14px; border-radius: 18px; position: relative; word-wrap: break-word; }
+        .message-bubble { padding: 10px 14px; border-radius: 18px; position: relative; word-wrap: break-word; max-width: 100%; }
         .message.sent .message-bubble { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-bottom-right-radius: 4px; }
         .message.received .message-bubble { background: white; color: #1e293b; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .message-time { font-size: 9px; margin-top: 4px; opacity: 0.7; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -109,6 +135,13 @@ $conn->close();
         .chat-input:focus { outline: none; border-color: #667eea; }
         .send-btn { background: linear-gradient(135deg, #667eea, #764ba2); border: none; width: 42px; height: 42px; border-radius: 50%; color: white; cursor: pointer; transition: all 0.3s; }
         .send-btn:hover { transform: scale(1.05); }
+        
+        .typing-status {
+            font-size: 11px;
+            color: #667eea;
+            margin-top: 4px;
+            min-height: 20px;
+        }
         
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
         .modal-content { background: white; border-radius: 20px; padding: 24px; width: 400px; max-width: 90%; }
@@ -186,7 +219,7 @@ $conn->close();
                         <div class="chat-avatar"><?php echo strtoupper(substr($current_conversation['other_user_name'], 0, 1)); ?></div>
                         <div class="chat-header-info">
                             <h3><?php echo htmlspecialchars($current_conversation['other_user_name']); ?></h3>
-                            <p id="typingStatus"></p>
+                            <div class="typing-status" id="typingStatus"></div>
                         </div>
                     </div>
                     <div class="chat-header-right">
@@ -285,6 +318,7 @@ $conn->close();
         let userId = <?php echo $user_id; ?>;
         let pollInterval;
         let typingTimeout;
+        let typingCheckInterval;
 
         function scrollToBottom() {
             const messagesArea = document.getElementById('messagesArea');
@@ -510,13 +544,47 @@ $conn->close();
             });
         }
 
+        // FIXED: Send typing indicator - only sends when user is typing
         function sendTyping() {
             if (!conversationId) return;
-            $.post('api/typing.php', { conversation_id: conversationId, typing: true });
-            clearTimeout(typingTimeout);
+            
+            // Clear previous timeout
+            if (typingTimeout) {
+                clearTimeout(typingTimeout);
+            }
+            
+            // Send typing start
+            $.post('api/typing.php', { 
+                conversation_id: conversationId, 
+                typing: true 
+            });
+            
+            // Set timeout to stop typing after 2 seconds of no typing
             typingTimeout = setTimeout(() => {
-                $.post('api/typing.php', { conversation_id: conversationId, typing: false });
-            }, 1000);
+                $.post('api/typing.php', { 
+                    conversation_id: conversationId, 
+                    typing: false 
+                });
+            }, 2000);
+        }
+
+        // FIXED: Check other user's typing status - only shows when OTHER user is typing
+        function checkOtherUserTyping() {
+            if (!conversationId) return;
+            
+            $.get('api/typing.php', { 
+                conversation_id: conversationId 
+            }, function(response) {
+                const typingStatus = document.getElementById('typingStatus');
+                if (typingStatus) {
+                    // Only show typing indicator if the OTHER user is typing
+                    if (response.typing && response.typing_user_id && response.typing_user_id != userId) {
+                        typingStatus.innerHTML = '<span class="typing-indicator"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span> typing...</span>';
+                    } else {
+                        typingStatus.innerHTML = '';
+                    }
+                }
+            });
         }
 
         function updateConversationList() {
@@ -549,14 +617,9 @@ $conn->close();
             pollInterval = setInterval(() => { loadMessages(); }, 3000);
         }
 
-        function checkTyping() {
-            if (!conversationId) return;
-            $.get('api/typing.php', { conversation_id: conversationId }, function(response) {
-                const typingStatus = document.getElementById('typingStatus');
-                if (typingStatus) {
-                    typingStatus.textContent = response.typing ? 'Typing...' : '';
-                }
-            });
+        function startTypingCheck() {
+            if (typingCheckInterval) clearInterval(typingCheckInterval);
+            typingCheckInterval = setInterval(() => { checkOtherUserTyping(); }, 2000);
         }
 
         const textarea = document.getElementById('messageInput');
@@ -574,20 +637,38 @@ $conn->close();
             });
         }
 
-        function openNewChatModal() { document.getElementById('newChatModal').style.display = 'flex'; }
-        function closeNewChatModal() { document.getElementById('newChatModal').style.display = 'none'; }
-        function startConversation(brokerId) { window.location.href = `api/start_conversation.php?broker_id=${brokerId}`; }
-        function toggleSidebar() { document.getElementById('chatSidebar').classList.toggle('open'); }
-        function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+        function openNewChatModal() { 
+            document.getElementById('newChatModal').style.display = 'flex'; 
+        }
+        
+        function closeNewChatModal() { 
+            document.getElementById('newChatModal').style.display = 'none'; 
+        }
+        
+        function startConversation(brokerId) { 
+            window.location.href = `api/start_conversation.php?broker_id=${brokerId}`; 
+        }
+        
+        function toggleSidebar() { 
+            document.getElementById('chatSidebar').classList.toggle('open'); 
+        }
+        
+        function escapeHtml(text) { 
+            const div = document.createElement('div'); 
+            div.textContent = text; 
+            return div.innerHTML; 
+        }
 
+        // Initialize chat if conversation exists
         if (conversationId) {
             startPolling();
+            startTypingCheck();
             loadMessages();
-            setInterval(checkTyping, 2000);
             $.post('api/mark_read.php', { conversation_id: conversationId });
             setTimeout(scrollToBottom, 500);
         }
 
+        // Close modals when clicking outside
         window.onclick = function(event) {
             const modal = document.getElementById('newChatModal');
             const clearModal = document.getElementById('clearHistoryModal');
