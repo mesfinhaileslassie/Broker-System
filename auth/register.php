@@ -1,97 +1,198 @@
 <?php
-// auth/register.php - Updated with Company Registration
+// auth/register.php - Complete Registration with Ethiopian Validation
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/validation.php';
 
-$error   = '';
+$error = '';
 $success = '';
+$form_data = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $full_name        = trim($_POST['full_name'] ?? '');
-    $email            = trim($_POST['email'] ?? '');
-    $phone            = trim($_POST['phone'] ?? '');
-    $password         = $_POST['password'] ?? '';
-    $confirm_password = $_POST['confirm_password'] ?? '';
-    $account_type     = $_POST['account_type'] ?? 'user'; // NEW: user or company
+    // Sanitize all inputs first
+    $form_data = [
+        'full_name' => sanitizeString($_POST['full_name'] ?? ''),
+        'email' => sanitizeEmail($_POST['email'] ?? ''),
+        'phone' => sanitizePhone($_POST['phone'] ?? ''),
+        'password' => $_POST['password'] ?? '', // Don't sanitize password
+        'confirm_password' => $_POST['confirm_password'] ?? '',
+        'account_type' => sanitizeString($_POST['account_type'] ?? 'user'),
+        'business_name' => sanitizeString($_POST['business_name'] ?? ''),
+        'business_type' => sanitizeString($_POST['business_type'] ?? ''),
+        'tin_number' => sanitizeString($_POST['tin_number'] ?? ''),
+        'business_address' => sanitizeString($_POST['business_address'] ?? '')
+    ];
     
-    // Company specific fields
-    $business_name    = trim($_POST['business_name'] ?? '');
-    $business_type    = trim($_POST['business_type'] ?? '');
-    $tax_id       = trim($_POST['tax_id'] ?? '');
-    $business_address = trim($_POST['business_address'] ?? '');
-
     $errors = [];
-
-    // Validate required fields
-    if (empty($full_name)) $errors[] = 'Full name is required';
-    if (empty($email)) $errors[] = 'Email is required';
-    if (empty($password)) $errors[] = 'Password is required';
-    if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters';
-    if ($password !== $confirm_password) $errors[] = 'Passwords do not match';
     
-    // Validate email format
-    if (!validateEmail($email)) $errors[] = 'Please enter a valid email address';
-    
-    // Company validation
-    if ($account_type == 'company') {
-        if (empty($business_name)) $errors[] = 'Business name is required for company accounts';
-        if (empty($tax_id)) $errors[] = 'TIN number is required for company accounts';
-        if (!validateTIN($tax_id)) $errors[] = 'Please enter a valid TIN number (10-15 digits)';
+    // ============================================
+    // FULL NAME VALIDATION
+    // ============================================
+    if (empty($form_data['full_name'])) {
+        $errors[] = "Full name is required";
+    } elseif (strlen($form_data['full_name']) < 3) {
+        $errors[] = "Full name must be at least 3 characters";
+    } elseif (strlen($form_data['full_name']) > 100) {
+        $errors[] = "Full name must not exceed 100 characters";
+    } elseif (!preg_match('/^[a-zA-Z\s\'-]+$/', $form_data['full_name'])) {
+        $errors[] = "Full name can only contain letters, spaces, hyphens, and apostrophes";
     }
-
-    if (empty($errors)) {
-        $conn = getDbConnection();
-
-        // Check if email already exists
-        if (validateEmailExists($conn, $email)) {
-            $error = 'Email already registered';
-        } else {
-            $password_hash = password_hash($password, PASSWORD_DEFAULT);
-
-            // Begin transaction
-            $conn->begin_transaction();
-            
-            try {
-                // Insert user
-                $stmt = $conn->prepare("INSERT INTO users (full_name, email, phone, password_hash, role, is_verified, created_at) VALUES (?, ?, ?, ?, ?, 0, NOW())");
-                $stmt->bind_param("sssss", $full_name, $email, $phone, $password_hash, $account_type);
-                $stmt->execute();
-                $user_id = $conn->insert_id;
-                
-                // If company, create company profile
-                if ($account_type == 'company') {
-                    $stmt2 = $conn->prepare("INSERT INTO companies (user_id, business_name, business_type, tax_id, address, is_approved, created_at) VALUES (?, ?, ?, ?, ?, 0, NOW())");
-                    $stmt2->bind_param("issss", $user_id, $business_name, $business_type, $tax_id, $business_address);
-                    $stmt2->execute();
-                }
-                
-                // Add welcome bonus for new users
-                $conn->query("UPDATE users SET balance = balance + 100 WHERE id = $user_id");
-                $conn->query("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES ($user_id, 100, 'deposit', 'Welcome bonus', NOW())");
-                
-                $conn->commit();
-                
-                // Auto-login the user
-                $userBalance = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
-                userLogin($user_id, $full_name, $email, $account_type, $userBalance['balance']);
-                
-                // Redirect based on account type
-                if ($account_type == 'company') {
-                    $success = 'Company account created! Redirecting to company dashboard...';
-                    header('Refresh: 2; URL=/broker_system/company/dashboard.php');
-                } else {
-                    $success = 'Account created! Redirecting to your dashboard...';
-                    header('Refresh: 2; URL=/broker_system/user/dashboard.php');
-                }
-                
-            } catch (Exception $e) {
-                $conn->rollback();
-                $error = 'Registration failed: ' . $e->getMessage();
+    
+    // ============================================
+    // EMAIL VALIDATION (Real email format)
+    // ============================================
+    if (empty($form_data['email'])) {
+        $errors[] = "Email address is required";
+    } elseif (!validateEmail($form_data['email'])) {
+        $errors[] = "Please enter a valid email address (e.g., name@example.com)";
+    } elseif (strlen($form_data['email']) > 255) {
+        $errors[] = "Email address is too long";
+    }
+    
+    // ============================================
+    // PHONE VALIDATION (Ethiopian format)
+    // ============================================
+    if (!empty($form_data['phone'])) {
+        if (!validatePhone($form_data['phone'])) {
+            $errors[] = "Please enter a valid Ethiopian phone number (e.g., +251911234567 or 0911234567)";
+        }
+    }
+    
+    // ============================================
+    // PASSWORD VALIDATION (Strong password)
+    // ============================================
+    if (empty($form_data['password'])) {
+        $errors[] = "Password is required";
+    } else {
+        $password_errors = validatePasswordStrength($form_data['password']);
+        if (!empty($password_errors)) {
+            $errors = array_merge($errors, $password_errors);
+        }
+        
+        // Confirm password match
+        if ($form_data['password'] !== $form_data['confirm_password']) {
+            $errors[] = "Passwords do not match";
+        }
+    }
+    
+    // ============================================
+    // ACCOUNT TYPE VALIDATION
+    // ============================================
+    $valid_account_types = ['user', 'company'];
+    if (!in_array($form_data['account_type'], $valid_account_types)) {
+        $errors[] = "Invalid account type selected";
+    }
+    
+    // ============================================
+    // COMPANY SPECIFIC VALIDATION
+    // ============================================
+    if ($form_data['account_type'] == 'company') {
+        if (empty($form_data['business_name'])) {
+            $errors[] = "Business name is required for company accounts";
+        } elseif (strlen($form_data['business_name']) < 2) {
+            $errors[] = "Business name must be at least 2 characters";
+        } elseif (strlen($form_data['business_name']) > 150) {
+            $errors[] = "Business name must not exceed 150 characters";
+        }
+        
+        if (empty($form_data['tin_number'])) {
+            $errors[] = "TIN (Tax Identification Number) is required for company accounts";
+        } elseif (!validateTIN($form_data['tin_number'])) {
+            $errors[] = "Please enter a valid TIN number (10-15 digits)";
+        }
+        
+        if (!empty($form_data['business_type'])) {
+            $valid_business_types = ['Technology', 'Construction', 'Manufacturing', 'Trading', 'Services', 'Retail', 'Other'];
+            if (!in_array($form_data['business_type'], $valid_business_types)) {
+                $errors[] = "Please select a valid business type";
             }
         }
+    }
+    
+    // ============================================
+    // DATABASE VALIDATION (Email exists?)
+    // ============================================
+    if (empty($errors)) {
+        $conn = getDbConnection();
+        
+        if (emailExists($conn, $form_data['email'])) {
+            $errors[] = "This email is already registered. Please login or use a different email.";
+        }
+        
+        $conn->close();
+    }
+    
+    // ============================================
+    // PROCESS REGISTRATION
+    // ============================================
+    if (empty($errors)) {
+        $conn = getDbConnection();
+        $password_hash = password_hash($form_data['password'], PASSWORD_DEFAULT);
+        
+        $conn->begin_transaction();
+        
+        try {
+            // Insert user
+            $stmt = $conn->prepare("
+                INSERT INTO users (full_name, email, phone, password_hash, role, is_verified, created_at) 
+                VALUES (?, ?, ?, ?, ?, 0, NOW())
+            ");
+            $stmt->bind_param("sssss", 
+                $form_data['full_name'], 
+                $form_data['email'], 
+                $form_data['phone'], 
+                $password_hash, 
+                $form_data['account_type']
+            );
+            $stmt->execute();
+            $user_id = $conn->insert_id;
+            
+            // If company, create company profile
+            if ($form_data['account_type'] == 'company') {
+                $stmt2 = $conn->prepare("
+                    INSERT INTO companies (user_id, business_name, business_type, tin_number, address, is_approved, created_at) 
+                    VALUES (?, ?, ?, ?, ?, 0, NOW())
+                ");
+                $stmt2->bind_param("issss", 
+                    $user_id, 
+                    $form_data['business_name'], 
+                    $form_data['business_type'], 
+                    $form_data['tin_number'], 
+                    $form_data['business_address']
+                );
+                $stmt2->execute();
+            }
+            
+            // Add welcome bonus (100 ETB for new users)
+            $conn->query("UPDATE users SET balance = balance + 100 WHERE id = $user_id");
+            $conn->query("
+                INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) 
+                VALUES ($user_id, 100, 'deposit', 'Welcome bonus', NOW())
+            ");
+            
+            $conn->commit();
+            
+            // Auto-login
+            $userBalance = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
+            userLogin($user_id, $form_data['full_name'], $form_data['email'], $form_data['account_type'], $userBalance['balance']);
+            
+            // Redirect based on account type
+            if ($form_data['account_type'] == 'company') {
+                $success = 'Company account created successfully! Your account is pending admin approval.';
+                header('Refresh: 3; URL=/broker_system/company/dashboard.php');
+            } else {
+                $success = 'Account created successfully! Welcome to Ethio Brokerplace!';
+                header('Refresh: 2; URL=/broker_system/user/dashboard.php');
+            }
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            $errors[] = "Registration failed: " . $e->getMessage();
+            $error = implode('<br>', $errors);
+        }
+        
         $conn->close();
     } else {
         $error = implode('<br>', $errors);
@@ -151,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-shadow: var(--shadow-card);
             border: 1px solid var(--border);
             width: 100%;
-            max-width: 520px;
+            max-width: 560px;
             overflow: hidden;
         }
 
@@ -211,11 +312,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             gap: 9px;
-            padding: 10px 14px;
+            padding: 12px 16px;
             border-radius: var(--radius-sm);
             font-size: 13px;
             font-weight: 500;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
             animation: fadeIn var(--transition);
         }
 
@@ -227,7 +328,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* Account Type Selector */
         .account-type-selector {
             display: flex;
             gap: 12px;
@@ -298,6 +398,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             letter-spacing: 0.01em;
         }
 
+        .label-required {
+            color: #ef4444;
+            margin-left: 2px;
+        }
+
         .input-wrap {
             position: relative;
             display: flex;
@@ -315,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .input-wrap input, .input-wrap select {
             width: 100%;
-            height: 40px;
+            height: 42px;
             padding: 0 36px 0 34px;
             border: 1.5px solid var(--border);
             border-radius: var(--radius-sm);
@@ -340,6 +445,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .input-wrap input:focus ~ i.left,
         .input-wrap select:focus ~ i.left { color: var(--brand); }
+
+        .input-wrap input.error {
+            border-color: #ef4444;
+        }
 
         .toggle-pw {
             position: absolute;
@@ -366,7 +475,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-top: 5px;
+            margin-top: 6px;
         }
 
         .strength-bar {
@@ -385,10 +494,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .strength-label {
-            font-size: 10.5px;
+            font-size: 10px;
             font-weight: 500;
             color: var(--muted);
-            min-width: 70px;
+            min-width: 60px;
             text-align: right;
         }
 
@@ -406,7 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .btn-submit {
             width: 100%;
-            height: 42px;
+            height: 44px;
             background: var(--brand);
             color: #fff;
             border: none;
@@ -419,7 +528,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             align-items: center;
             justify-content: center;
             gap: 8px;
-            margin-top: 18px;
+            margin-top: 20px;
             transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
         }
 
@@ -432,7 +541,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-submit:active { transform: translateY(0); }
 
         .footer-link {
-            margin-top: 16px;
+            margin-top: 20px;
             padding-top: 16px;
             border-top: 1px solid var(--border);
             text-align: center;
@@ -455,7 +564,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 4px;
         }
 
-        @media (max-width: 480px) {
+        .phone-hint {
+            font-size: 10px;
+            color: #059669;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 560px) {
             .form-grid           { grid-template-columns: 1fr; }
             .field.full          { grid-column: 1; }
             .bonus-pill          { display: none; }
@@ -499,58 +614,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
 
-        <form method="POST" novalidate>
+        <form method="POST" novalidate id="registerForm">
             
             <!-- Account Type Selector -->
             <div class="account-type-selector">
-                <div class="type-option selected" data-type="user" onclick="selectAccountType('user')">
+                <div class="type-option <?php echo ($form_data['account_type'] ?? 'user') == 'user' ? 'selected' : ''; ?>" data-type="user" onclick="selectAccountType('user')">
                     <i class="fas fa-user"></i>
                     <span>Individual</span>
                     <small>Buy & sell as individual</small>
                 </div>
-                <div class="type-option" data-type="company" onclick="selectAccountType('company')">
+                <div class="type-option <?php echo ($form_data['account_type'] ?? '') == 'company' ? 'selected' : ''; ?>" data-type="company" onclick="selectAccountType('company')">
                     <i class="fas fa-building"></i>
                     <span>Company</span>
                     <small>Post jobs & hire talent</small>
                 </div>
             </div>
-            <input type="hidden" name="account_type" id="accountType" value="user">
+            <input type="hidden" name="account_type" id="accountType" value="<?php echo htmlspecialchars($form_data['account_type'] ?? 'user'); ?>">
 
             <div class="form-grid">
 
                 <!-- Full Name -->
                 <div class="field full">
-                    <label for="full_name">Full Name *</label>
+                    <label for="full_name">Full Name <span class="label-required">*</span></label>
                     <div class="input-wrap">
-                        <input type="text" id="full_name" name="full_name" placeholder="Abebe Kebede" required autofocus autocomplete="name" value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>">
+                        <input type="text" id="full_name" name="full_name" placeholder="Abebe Kebede" required 
+                               value="<?php echo htmlspecialchars($form_data['full_name'] ?? ''); ?>">
                         <i class="fas fa-user left"></i>
                     </div>
                 </div>
 
                 <!-- Email -->
                 <div class="field">
-                    <label for="email">Email Address *</label>
+                    <label for="email">Email Address <span class="label-required">*</span></label>
                     <div class="input-wrap">
-                        <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
+                        <input type="email" id="email" name="email" placeholder="you@example.com" required 
+                               value="<?php echo htmlspecialchars($form_data['email'] ?? ''); ?>">
                         <i class="fas fa-envelope left"></i>
                     </div>
                 </div>
 
                 <!-- Phone -->
                 <div class="field">
-                    <label for="phone">Phone <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+                    <label for="phone">Phone Number</label>
                     <div class="input-wrap">
-                        <input type="tel" id="phone" name="phone" placeholder="+251 9XX XXX XXX" autocomplete="tel" value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>">
+                        <input type="tel" id="phone" name="phone" placeholder="+251 9XX XXX XXX" 
+                               value="<?php echo htmlspecialchars($form_data['phone'] ?? ''); ?>">
                         <i class="fas fa-phone left"></i>
+                    </div>
+                    <div class="phone-hint">
+                        <i class="fas fa-info-circle"></i> Ethiopian format: +251XXXXXXXXX or 09XXXXXXXX
                     </div>
                 </div>
 
                 <!-- Company Fields (hidden by default) -->
-                <div id="companyFields" class="company-fields">
+                <div id="companyFields" class="company-fields <?php echo ($form_data['account_type'] ?? '') == 'company' ? 'active' : ''; ?>">
                     <div class="field full">
-                        <label for="business_name">Business Name *</label>
+                        <label for="business_name">Business Name <span class="label-required">*</span></label>
                         <div class="input-wrap">
-                            <input type="text" id="business_name" name="business_name" placeholder="Your Company Name" value="<?php echo htmlspecialchars($_POST['business_name'] ?? ''); ?>">
+                            <input type="text" id="business_name" name="business_name" placeholder="Your Company Name" 
+                                   value="<?php echo htmlspecialchars($form_data['business_name'] ?? ''); ?>">
                             <i class="fas fa-building left"></i>
                         </div>
                     </div>
@@ -560,22 +682,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="input-wrap">
                             <select id="business_type" name="business_type">
                                 <option value="">Select business type</option>
-                                <option value="Technology" <?php echo ($_POST['business_type'] ?? '') == 'Technology' ? 'selected' : ''; ?>>Technology / IT</option>
-                                <option value="Construction" <?php echo ($_POST['business_type'] ?? '') == 'Construction' ? 'selected' : ''; ?>>Construction</option>
-                                <option value="Manufacturing" <?php echo ($_POST['business_type'] ?? '') == 'Manufacturing' ? 'selected' : ''; ?>>Manufacturing</option>
-                                <option value="Trading" <?php echo ($_POST['business_type'] ?? '') == 'Trading' ? 'selected' : ''; ?>>Trading / Import-Export</option>
-                                <option value="Services" <?php echo ($_POST['business_type'] ?? '') == 'Services' ? 'selected' : ''; ?>>Services</option>
-                                <option value="Retail" <?php echo ($_POST['business_type'] ?? '') == 'Retail' ? 'selected' : ''; ?>>Retail</option>
-                                <option value="Other" <?php echo ($_POST['business_type'] ?? '') == 'Other' ? 'selected' : ''; ?>>Other</option>
+                                <option value="Technology" <?php echo ($form_data['business_type'] ?? '') == 'Technology' ? 'selected' : ''; ?>>Technology / IT</option>
+                                <option value="Construction" <?php echo ($form_data['business_type'] ?? '') == 'Construction' ? 'selected' : ''; ?>>Construction</option>
+                                <option value="Manufacturing" <?php echo ($form_data['business_type'] ?? '') == 'Manufacturing' ? 'selected' : ''; ?>>Manufacturing</option>
+                                <option value="Trading" <?php echo ($form_data['business_type'] ?? '') == 'Trading' ? 'selected' : ''; ?>>Trading / Import-Export</option>
+                                <option value="Services" <?php echo ($form_data['business_type'] ?? '') == 'Services' ? 'selected' : ''; ?>>Services</option>
+                                <option value="Retail" <?php echo ($form_data['business_type'] ?? '') == 'Retail' ? 'selected' : ''; ?>>Retail</option>
+                                <option value="Other" <?php echo ($form_data['business_type'] ?? '') == 'Other' ? 'selected' : ''; ?>>Other</option>
                             </select>
                             <i class="fas fa-briefcase left"></i>
                         </div>
                     </div>
                     
                     <div class="field">
-                        <label for="tax_id">TIN Number *</label>
+                        <label for="tin_number">TIN Number <span class="label-required">*</span></label>
                         <div class="input-wrap">
-                            <input type="text" id="tax_id" name="tax_id" placeholder="1234567890" value="<?php echo htmlspecialchars($_POST['tax_id'] ?? ''); ?>">
+                            <input type="text" id="tin_number" name="tin_number" placeholder="1234567890" 
+                                   value="<?php echo htmlspecialchars($form_data['tin_number'] ?? ''); ?>">
                             <i class="fas fa-id-card left"></i>
                         </div>
                         <div class="info-text">Tax Identification Number (10-15 digits)</div>
@@ -584,7 +707,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="field">
                         <label for="business_address">Business Address</label>
                         <div class="input-wrap">
-                            <input type="text" id="business_address" name="business_address" placeholder="Addis Ababa, Bole Sub-city" value="<?php echo htmlspecialchars($_POST['business_address'] ?? ''); ?>">
+                            <input type="text" id="business_address" name="business_address" placeholder="Addis Ababa, Bole Sub-city" 
+                                   value="<?php echo htmlspecialchars($form_data['business_address'] ?? ''); ?>">
                             <i class="fas fa-map-marker-alt left"></i>
                         </div>
                     </div>
@@ -592,9 +716,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Password -->
                 <div class="field">
-                    <label for="password">Password *</label>
+                    <label for="password">Password <span class="label-required">*</span></label>
                     <div class="input-wrap">
-                        <input type="password" id="password" name="password" placeholder="Min. 6 characters" required minlength="6" autocomplete="new-password">
+                        <input type="password" id="password" name="password" placeholder="Min. 6 characters" required minlength="6">
                         <i class="fas fa-lock left"></i>
                         <i class="fas fa-eye toggle-pw" id="togglePassword"></i>
                     </div>
@@ -604,13 +728,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <span class="strength-label" id="strengthLabel"></span>
                     </div>
+                    <div class="info-text">Must contain uppercase, lowercase, and number</div>
                 </div>
 
                 <!-- Confirm Password -->
                 <div class="field">
-                    <label for="confirm_password">Confirm Password *</label>
+                    <label for="confirm_password">Confirm Password <span class="label-required">*</span></label>
                     <div class="input-wrap">
-                        <input type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required autocomplete="new-password">
+                        <input type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required>
                         <i class="fas fa-lock left"></i>
                         <i class="fas match-icon" id="matchIcon"></i>
                         <i class="fas fa-eye toggle-pw" id="toggleConfirm"></i>
@@ -637,87 +762,115 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     function selectAccountType(type) {
         document.getElementById('accountType').value = type;
         
-        // Update UI
         document.querySelectorAll('.type-option').forEach(opt => {
             opt.classList.remove('selected');
         });
         document.querySelector(`.type-option[data-type="${type}"]`).classList.add('selected');
         
-        // Show/hide company fields
         const companyFields = document.getElementById('companyFields');
+        const businessName = document.getElementById('business_name');
+        const tinNumber = document.getElementById('tin_number');
+        
         if (type === 'company') {
             companyFields.classList.add('active');
-            // Make company fields required
-            document.getElementById('business_name').required = true;
-            document.getElementById('tax_id').required = true;
+            if (businessName) businessName.required = true;
+            if (tinNumber) tinNumber.required = true;
         } else {
             companyFields.classList.remove('active');
-            document.getElementById('business_name').required = false;
-            document.getElementById('tax_id').required = false;
+            if (businessName) businessName.required = false;
+            if (tinNumber) tinNumber.required = false;
         }
     }
 
-    // Password strength
-    const pwInput      = document.getElementById('password');
+    // Password strength checker
+    const pwInput = document.getElementById('password');
     const strengthFill = document.getElementById('strengthFill');
-    const strengthLbl  = document.getElementById('strengthLabel');
+    const strengthLbl = document.getElementById('strengthLabel');
 
-    const levels = [
-        { label: '',            color: '',        w: '0%'   },
-        { label: 'Weak',        color: '#ef4444', w: '25%'  },
-        { label: 'Fair',        color: '#f59e0b', w: '50%'  },
-        { label: 'Good',        color: '#3b82f6', w: '75%'  },
-        { label: 'Strong',      color: '#10b981', w: '100%' },
-    ];
-
-    pwInput.addEventListener('input', function () {
-        const v = this.value;
+    function checkPasswordStrength(password) {
         let score = 0;
-        if (v.length >= 6)                               score++;
-        if (v.length >= 10)                              score++;
-        if (/[a-z]/.test(v) && /[A-Z]/.test(v))         score++;
-        if (/[0-9]/.test(v))                             score++;
-        if (/[^a-zA-Z0-9]/.test(v))                     score++;
+        if (password.length >= 6) score++;
+        if (password.length >= 10) score++;
+        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+        if (/[0-9]/.test(password)) score++;
+        if (/[^a-zA-Z0-9]/.test(password)) score++;
+        
+        const levels = [
+            { label: 'Very Weak', color: '#ef4444', width: '20%' },
+            { label: 'Weak', color: '#f59e0b', width: '40%' },
+            { label: 'Fair', color: '#f59e0b', width: '60%' },
+            { label: 'Good', color: '#3b82f6', width: '80%' },
+            { label: 'Strong', color: '#10b981', width: '100%' }
+        ];
+        
+        const index = Math.min(Math.floor(score / 1.5), 4);
+        const level = levels[index];
+        
+        strengthFill.style.width = level.width;
+        strengthFill.style.backgroundColor = level.color;
+        strengthLbl.textContent = password.length === 0 ? '' : level.label;
+        strengthLbl.style.color = level.color;
+        
+        return score >= 3;
+    }
 
-        const lvl = v.length === 0 ? 0 : Math.min(Math.ceil(score / 1.25), 4);
-        strengthFill.style.width           = levels[lvl].w;
-        strengthFill.style.backgroundColor = levels[lvl].color;
-        strengthLbl.style.color            = levels[lvl].color || 'var(--muted)';
-        strengthLbl.textContent            = levels[lvl].label;
-
+    pwInput.addEventListener('input', function() {
+        checkPasswordStrength(this.value);
         checkMatch();
     });
 
-    // Confirm match indicator
+    // Password match checker
     const confirmInput = document.getElementById('confirm_password');
-    const matchIcon    = document.getElementById('matchIcon');
+    const matchIcon = document.getElementById('matchIcon');
 
     function checkMatch() {
-        const pw  = pwInput.value;
+        const pw = pwInput.value;
         const cpw = confirmInput.value;
+        
         if (!cpw) {
             matchIcon.classList.remove('visible', 'ok', 'bad', 'fa-check', 'fa-xmark');
             return;
         }
-        const ok = pw === cpw;
+        
+        const ok = pw === cpw && pw.length > 0;
         matchIcon.className = `fas match-icon visible ${ok ? 'ok fa-check' : 'bad fa-xmark'}`;
     }
 
     confirmInput.addEventListener('input', checkMatch);
 
-    // Password toggles
+    // Password visibility toggles
     function makeToggle(btnId, inputId) {
-        document.getElementById(btnId).addEventListener('click', function () {
-            const inp  = document.getElementById(inputId);
-            const show = inp.type === 'password';
-            inp.type = show ? 'text' : 'password';
-            this.classList.toggle('fa-eye',      !show);
-            this.classList.toggle('fa-eye-slash', show);
-        });
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', function() {
+                const inp = document.getElementById(inputId);
+                const show = inp.type === 'password';
+                inp.type = show ? 'text' : 'password';
+                this.classList.toggle('fa-eye', !show);
+                this.classList.toggle('fa-eye-slash', show);
+            });
+        }
     }
 
     makeToggle('togglePassword', 'password');
-    makeToggle('toggleConfirm',  'confirm_password');
+    makeToggle('toggleConfirm', 'confirm_password');
+    
+    // Phone number formatting hint
+    const phoneInput = document.getElementById('phone');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function() {
+            let value = this.value.replace(/[^0-9+]/g, '');
+            if (value.startsWith('0') && value.length === 10) {
+                this.style.borderColor = '#10b981';
+            } else if (value.startsWith('+251') && value.length === 13) {
+                this.style.borderColor = '#10b981';
+            } else if (value === '') {
+                this.style.borderColor = '';
+            } else {
+                this.style.borderColor = '#ef4444';
+            }
+        });
+    }
 </script>
 </body>
 </html>

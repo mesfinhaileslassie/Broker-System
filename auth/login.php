@@ -1,12 +1,13 @@
 <?php
-// auth/login.php - Unified Login Page (FIXED for Company)
+// auth/login.php - Complete Login with Validation
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/validation.php';
 
+// If already logged in, redirect based on role
 if (isLoggedIn()) {
-    // Redirect based on role
     if ($_SESSION['user_role'] == 'admin') {
         header('Location: /broker_system/admin/dashboard.php');
     } elseif ($_SESSION['user_role'] == 'company') {
@@ -18,34 +19,69 @@ if (isLoggedIn()) {
 }
 
 $error = '';
+$email = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email    = trim($_POST['email'] ?? '');
+    // Sanitize inputs
+    $email = sanitizeEmail($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-
-    if (empty($email) || empty($password)) {
-        $error = 'Please enter email and password';
-    } else {
+    $remember = isset($_POST['remember']) ? true : false;
+    
+    $errors = [];
+    
+    // Validate email
+    if (empty($email)) {
+        $errors[] = "Email address is required";
+    } elseif (!validateEmail($email)) {
+        $errors[] = "Please enter a valid email address";
+    }
+    
+    // Validate password
+    if (empty($password)) {
+        $errors[] = "Password is required";
+    }
+    
+    if (empty($errors)) {
         $conn = getDbConnection();
-        $stmt = $conn->prepare("SELECT id, full_name, email, password_hash, role, balance, is_suspended FROM users WHERE email = ?");
+        
+        // Get user by email
+        $stmt = $conn->prepare("SELECT id, full_name, email, password_hash, role, balance, is_suspended, is_verified FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
-
+        
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
+            
+            // Check if suspended
             if ($user['is_suspended']) {
-                $error = 'Your account has been suspended. Please contact support.';
-            } elseif (password_verify($password, $user['password_hash'])) {
+                $errors[] = "Your account has been suspended. Please contact support.";
+            } 
+            // Check if email verified (optional - uncomment if needed)
+            // elseif (!$user['is_verified']) {
+            //     $errors[] = "Please verify your email address before logging in.";
+            // }
+            // Verify password
+            elseif (password_verify($password, $user['password_hash'])) {
+                // Login successful
                 $_SESSION['user_logged_in'] = true;
-                $_SESSION['user_id']        = $user['id'];
-                $_SESSION['user_name']      = $user['full_name'];
-                $_SESSION['user_email']     = $user['email'];
-                $_SESSION['user_role']      = $user['role'];
-                $_SESSION['user_balance']   = $user['balance'];
-
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['full_name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role'] = $user['role'];
+                $_SESSION['user_balance'] = $user['balance'];
+                
+                // Update last login
                 $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
-
+                
+                // Remember me (30 days)
+                if ($remember) {
+                    $token = bin2hex(random_bytes(32));
+                    $expires = date('Y-m-d H:i:s', strtotime('+30 days'));
+                    $conn->query("INSERT INTO user_tokens (user_id, token, expires_at) VALUES ({$user['id']}, '$token', '$expires')");
+                    setcookie('remember_token', $token, time() + (86400 * 30), '/');
+                }
+                
                 // Role-based redirect
                 if ($user['role'] == 'admin') {
                     header('Location: /broker_system/admin/dashboard.php');
@@ -58,12 +94,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 exit;
             } else {
-                $error = 'Invalid email or password';
+                $errors[] = "Invalid email or password";
             }
         } else {
-            $error = 'Invalid email or password';
+            $errors[] = "No account found with this email address";
         }
+        
         $conn->close();
+    }
+    
+    if (!empty($errors)) {
+        $error = implode('<br>', $errors);
     }
 }
 ?>
@@ -162,11 +203,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             gap: 9px;
-            padding: 10px 14px;
+            padding: 12px 16px;
             border-radius: var(--radius-sm);
             font-size: 13px;
             font-weight: 500;
-            margin-bottom: 18px;
+            margin-bottom: 20px;
             background: var(--error-bg);
             border: 1px solid var(--error-border);
             color: var(--error-text);
@@ -178,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        .field { margin-bottom: 16px; }
+        .field { margin-bottom: 18px; }
 
         label {
             display: block;
@@ -206,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .input-wrap input {
             width: 100%;
-            height: 42px;
+            height: 44px;
             padding: 0 40px 0 38px;
             border: 1.5px solid var(--border);
             border-radius: var(--radius-sm);
@@ -238,9 +279,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .toggle-pw:hover { color: var(--brand); }
 
+        .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .checkbox input {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .checkbox label {
+            margin-bottom: 0;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
         .btn-submit {
             width: 100%;
-            height: 42px;
+            height: 44px;
             background: var(--brand);
             color: #fff;
             border: none;
@@ -253,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             align-items: center;
             justify-content: center;
             gap: 8px;
-            margin-top: 20px;
+            margin-bottom: 16px;
             transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
         }
 
@@ -266,7 +326,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .btn-submit:active { transform: translateY(0); }
 
         .footer-links {
-            margin-top: 16px;
             text-align: center;
             font-size: 13px;
             color: var(--muted);
@@ -282,7 +341,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .footer-links a:hover { color: var(--brand-dark); }
 
         .demo {
-            margin-top: 18px;
+            margin-top: 20px;
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             overflow: hidden;
@@ -290,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .demo-toggle {
             width: 100%;
-            padding: 9px 14px;
+            padding: 10px 14px;
             background: var(--bg);
             border: none;
             display: flex;
@@ -325,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 6px 0;
+            padding: 8px 0;
             border-bottom: 1px solid var(--border);
         }
 
@@ -358,9 +417,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .trust-row {
             display: flex;
             justify-content: center;
-            gap: 6px;
+            gap: 8px;
             margin-top: 20px;
-            padding-top: 18px;
+            padding-top: 16px;
             border-top: 1px solid var(--border);
             flex-wrap: wrap;
         }
@@ -368,8 +427,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .pill {
             display: flex;
             align-items: center;
-            gap: 5px;
-            padding: 4px 10px;
+            gap: 6px;
+            padding: 5px 12px;
             border-radius: 20px;
             background: var(--brand-soft);
             font-size: 11px;
@@ -377,7 +436,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--brand);
         }
 
-        .pill i { font-size: 10px; }
+        .pill i { font-size: 11px; }
 
         @media (max-width: 440px) {
             body { background-size: 18px 18px; }
@@ -404,7 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if ($error): ?>
             <div class="alert">
                 <i class="fas fa-exclamation-circle"></i>
-                <?php echo htmlspecialchars($error); ?>
+                <?php echo $error; ?>
             </div>
         <?php endif; ?>
 
@@ -413,16 +472,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="field">
                 <label for="email">Email address</label>
                 <div class="input-wrap">
-                    <input
-                        type="email"
-                        id="email"
-                        name="email"
-                        placeholder="you@example.com"
-                        required
-                        autofocus
-                        value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
-                        autocomplete="email"
-                    >
+                    <input type="email" id="email" name="email" placeholder="you@example.com" required autofocus
+                           value="<?php echo htmlspecialchars($email); ?>">
                     <i class="fas fa-envelope left"></i>
                 </div>
             </div>
@@ -430,17 +481,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="field">
                 <label for="password">Password</label>
                 <div class="input-wrap">
-                    <input
-                        type="password"
-                        id="password"
-                        name="password"
-                        placeholder="Enter your password"
-                        required
-                        autocomplete="current-password"
-                    >
+                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
                     <i class="fas fa-lock left"></i>
-                    <i class="fas fa-eye toggle-pw" id="togglePassword" title="Show/hide password"></i>
+                    <i class="fas fa-eye toggle-pw" id="togglePassword"></i>
                 </div>
+            </div>
+
+            <div class="checkbox">
+                <input type="checkbox" name="remember" id="remember">
+                <label for="remember">Remember me</label>
             </div>
 
             <button type="submit" class="btn-submit">
@@ -455,8 +504,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </p>
 
         <div class="demo">
-            <button class="demo-toggle" id="demoToggle" aria-expanded="false" aria-controls="demoBody">
-                <span><i class="fas fa-circle-info" style="margin-right:6px;"></i>Demo accounts</span>
+            <button class="demo-toggle" id="demoToggle" aria-expanded="false">
+                <span><i class="fas fa-circle-info"></i> Demo accounts</span>
                 <i class="fas fa-chevron-down chevron"></i>
             </button>
             <div class="demo-body" id="demoBody">
@@ -488,18 +537,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
-    document.getElementById('togglePassword').addEventListener('click', function () {
-        const pw   = document.getElementById('password');
+    // Password visibility toggle
+    document.getElementById('togglePassword').addEventListener('click', function() {
+        const pw = document.getElementById('password');
         const show = pw.type === 'password';
         pw.type = show ? 'text' : 'password';
-        this.classList.toggle('fa-eye',       !show);
-        this.classList.toggle('fa-eye-slash',  show);
+        this.classList.toggle('fa-eye', !show);
+        this.classList.toggle('fa-eye-slash', show);
     });
 
+    // Demo credentials accordion
     const demoToggle = document.getElementById('demoToggle');
-    const demoBody   = document.getElementById('demoBody');
+    const demoBody = document.getElementById('demoBody');
 
-    demoToggle.addEventListener('click', function () {
+    demoToggle.addEventListener('click', function() {
         const open = demoBody.classList.toggle('open');
         this.setAttribute('aria-expanded', open);
     });
