@@ -1,9 +1,10 @@
 <?php
-// auth/register.php
+// auth/register.php - Updated with Company Registration
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/validation.php';
 
 $error   = '';
 $success = '';
@@ -14,46 +15,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone            = trim($_POST['phone'] ?? '');
     $password         = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
+    $account_type     = $_POST['account_type'] ?? 'user'; // NEW: user or company
+    
+    // Company specific fields
+    $business_name    = trim($_POST['business_name'] ?? '');
+    $business_type    = trim($_POST['business_type'] ?? '');
+    $tax_id       = trim($_POST['tax_id'] ?? '');
+    $business_address = trim($_POST['business_address'] ?? '');
 
-    if (empty($full_name) || empty($email) || empty($password)) {
-        $error = 'Please fill in all required fields';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Please enter a valid email address';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters';
-    } elseif ($password !== $confirm_password) {
-        $error = 'Passwords do not match';
-    } else {
+    $errors = [];
+
+    // Validate required fields
+    if (empty($full_name)) $errors[] = 'Full name is required';
+    if (empty($email)) $errors[] = 'Email is required';
+    if (empty($password)) $errors[] = 'Password is required';
+    if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters';
+    if ($password !== $confirm_password) $errors[] = 'Passwords do not match';
+    
+    // Validate email format
+    if (!validateEmail($email)) $errors[] = 'Please enter a valid email address';
+    
+    // Company validation
+    if ($account_type == 'company') {
+        if (empty($business_name)) $errors[] = 'Business name is required for company accounts';
+        if (empty($tax_id)) $errors[] = 'TIN number is required for company accounts';
+        if (!validateTIN($tax_id)) $errors[] = 'Please enter a valid TIN number (10-15 digits)';
+    }
+
+    if (empty($errors)) {
         $conn = getDbConnection();
 
-        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows > 0) {
+        // Check if email already exists
+        if (validateEmailExists($conn, $email)) {
             $error = 'Email already registered';
         } else {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
 
-            $stmt = $conn->prepare("INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, 'user', 1)");
-            $stmt->bind_param("ssss", $full_name, $email, $phone, $password_hash);
-
-            if ($stmt->execute()) {
+            // Begin transaction
+            $conn->begin_transaction();
+            
+            try {
+                // Insert user
+                $stmt = $conn->prepare("INSERT INTO users (full_name, email, phone, password_hash, role, is_verified, created_at) VALUES (?, ?, ?, ?, ?, 0, NOW())");
+                $stmt->bind_param("sssss", $full_name, $email, $phone, $password_hash, $account_type);
+                $stmt->execute();
                 $user_id = $conn->insert_id;
+                
+                // If company, create company profile
+                if ($account_type == 'company') {
+                    $stmt2 = $conn->prepare("INSERT INTO companies (user_id, business_name, business_type, tax_id, address, is_approved, created_at) VALUES (?, ?, ?, ?, ?, 0, NOW())");
+                    $stmt2->bind_param("issss", $user_id, $business_name, $business_type, $tax_id, $business_address);
+                    $stmt2->execute();
+                }
+                
+                // Add welcome bonus for new users
                 $conn->query("UPDATE users SET balance = balance + 100 WHERE id = $user_id");
-                $conn->query("INSERT INTO wallet_transactions (user_id, amount, type, description) VALUES ($user_id, 100, 'deposit', 'Welcome bonus')");
-
+                $conn->query("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES ($user_id, 100, 'deposit', 'Welcome bonus', NOW())");
+                
+                $conn->commit();
+                
+                // Auto-login the user
                 $userBalance = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
-                userLogin($user_id, $full_name, $email, 'user', $userBalance['balance']);
-
-                $success = 'Account created! Redirecting to your dashboard…';
-                header('Refresh: 2; URL=/broker_system/user/dashboard.php');
-            } else {
-                $error = 'Registration failed. Please try again.';
+                userLogin($user_id, $full_name, $email, $account_type, $userBalance['balance']);
+                
+                // Redirect based on account type
+                if ($account_type == 'company') {
+                    $success = 'Company account created! Redirecting to company dashboard...';
+                    header('Refresh: 2; URL=/broker_system/company/dashboard.php');
+                } else {
+                    $success = 'Account created! Redirecting to your dashboard...';
+                    header('Refresh: 2; URL=/broker_system/user/dashboard.php');
+                }
+                
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error = 'Registration failed: ' . $e->getMessage();
             }
         }
         $conn->close();
+    } else {
+        $error = implode('<br>', $errors);
     }
 }
 ?>
@@ -67,7 +108,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* ── Reset & Base ──────────────────────────────── */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
@@ -105,18 +145,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-size: 22px 22px;
         }
 
-        /* ── Card ──────────────────────────────────────── */
         .card {
             background: var(--surface);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-card);
             border: 1px solid var(--border);
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
             overflow: hidden;
         }
 
-        /* ── Header ────────────────────────────────────── */
         .card-header {
             padding: 24px 28px 20px;
             border-bottom: 1px solid var(--border);
@@ -151,7 +189,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 2px;
         }
 
-        /* Bonus pill inside header */
         .bonus-pill {
             margin-left: auto;
             display: flex;
@@ -168,10 +205,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .bonus-pill i  { color: #f59e0b; font-size: 11px; }
         .bonus-pill span { font-size: 11px; font-weight: 600; color: #92400e; }
 
-        /* ── Body ──────────────────────────────────────── */
         .card-body { padding: 22px 28px 26px; }
 
-        /* ── Alert ─────────────────────────────────────── */
         .alert {
             display: flex;
             align-items: center;
@@ -192,7 +227,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* ── Form Grid ─────────────────────────────────── */
+        /* Account Type Selector */
+        .account-type-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .type-option {
+            flex: 1;
+            padding: 14px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius-md);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .type-option:hover {
+            border-color: var(--brand);
+            background: var(--brand-soft);
+        }
+
+        .type-option.selected {
+            border-color: var(--brand);
+            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+            color: white;
+        }
+
+        .type-option.selected i,
+        .type-option.selected span {
+            color: white;
+        }
+
+        .type-option i {
+            font-size: 24px;
+            margin-bottom: 8px;
+            display: block;
+            color: var(--brand);
+        }
+
+        .type-option span {
+            font-size: 14px;
+            font-weight: 600;
+            display: block;
+        }
+
+        .type-option small {
+            font-size: 11px;
+            opacity: 0.7;
+            display: block;
+            margin-top: 4px;
+        }
+
         .form-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -210,7 +298,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             letter-spacing: 0.01em;
         }
 
-        /* ── Inputs ────────────────────────────────────── */
         .input-wrap {
             position: relative;
             display: flex;
@@ -226,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             transition: color var(--transition);
         }
 
-        .input-wrap input {
+        .input-wrap input, .input-wrap select {
             width: 100%;
             height: 40px;
             padding: 0 36px 0 34px;
@@ -239,14 +326,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             transition: border-color var(--transition), box-shadow var(--transition);
         }
 
-        .input-wrap input:focus {
+        .input-wrap select {
+            padding: 0 12px 0 34px;
+            cursor: pointer;
+        }
+
+        .input-wrap input:focus, .input-wrap select:focus {
             outline: none;
             border-color: var(--brand);
             background: #fff;
             box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.10);
         }
 
-        .input-wrap input:focus ~ i.left { color: var(--brand); }
+        .input-wrap input:focus ~ i.left,
+        .input-wrap select:focus ~ i.left { color: var(--brand); }
 
         .toggle-pw {
             position: absolute;
@@ -260,7 +353,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .toggle-pw:hover { color: var(--brand); }
 
-        /* ── Password strength ─────────────────────────── */
+        .company-fields {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .company-fields.active {
+            display: block;
+        }
+
         .strength-row {
             display: flex;
             align-items: center;
@@ -289,13 +390,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--muted);
             min-width: 70px;
             text-align: right;
-            transition: color 0.3s;
         }
 
-        /* ── Match indicator ───────────────────────────── */
         .match-icon {
             position: absolute;
-            right: 34px; /* sits left of the toggle */
+            right: 34px;
             font-size: 12px;
             transition: opacity var(--transition);
             opacity: 0;
@@ -305,7 +404,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .match-icon.ok      { color: #15803d; }
         .match-icon.bad     { color: var(--error-text); }
 
-        /* ── Submit ────────────────────────────────────── */
         .btn-submit {
             width: 100%;
             height: 42px;
@@ -333,7 +431,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .btn-submit:active { transform: translateY(0); }
 
-        /* ── Footer link ───────────────────────────────── */
         .footer-link {
             margin-top: 16px;
             padding-top: 16px;
@@ -352,11 +449,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .footer-link a:hover { color: var(--brand-dark); }
 
-        /* ── Responsive ────────────────────────────────── */
+        .info-text {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
         @media (max-width: 480px) {
             .form-grid           { grid-template-columns: 1fr; }
             .field.full          { grid-column: 1; }
             .bonus-pill          { display: none; }
+            .account-type-selector { flex-direction: column; }
             .card-header,
             .card-body           { padding-left: 18px; padding-right: 18px; }
         }
@@ -366,7 +469,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="card">
 
-    <!-- Header -->
     <div class="card-header">
         <div class="logo">
             <i class="fas fa-store"></i>
@@ -381,13 +483,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Body -->
     <div class="card-body">
 
         <?php if ($error): ?>
             <div class="alert alert-error">
                 <i class="fas fa-exclamation-circle"></i>
-                <?php echo htmlspecialchars($error); ?>
+                <?php echo $error; ?>
             </div>
         <?php endif; ?>
 
@@ -399,39 +500,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="POST" novalidate>
+            
+            <!-- Account Type Selector -->
+            <div class="account-type-selector">
+                <div class="type-option selected" data-type="user" onclick="selectAccountType('user')">
+                    <i class="fas fa-user"></i>
+                    <span>Individual</span>
+                    <small>Buy & sell as individual</small>
+                </div>
+                <div class="type-option" data-type="company" onclick="selectAccountType('company')">
+                    <i class="fas fa-building"></i>
+                    <span>Company</span>
+                    <small>Post jobs & hire talent</small>
+                </div>
+            </div>
+            <input type="hidden" name="account_type" id="accountType" value="user">
+
             <div class="form-grid">
 
                 <!-- Full Name -->
                 <div class="field full">
-                    <label for="full_name">Full Name</label>
+                    <label for="full_name">Full Name *</label>
                     <div class="input-wrap">
-                        <input
-                            type="text"
-                            id="full_name"
-                            name="full_name"
-                            placeholder="Abebe Kebede"
-                            required
-                            autofocus
-                            autocomplete="name"
-                            value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>"
-                        >
+                        <input type="text" id="full_name" name="full_name" placeholder="Abebe Kebede" required autofocus autocomplete="name" value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>">
                         <i class="fas fa-user left"></i>
                     </div>
                 </div>
 
                 <!-- Email -->
                 <div class="field">
-                    <label for="email">Email Address</label>
+                    <label for="email">Email Address *</label>
                     <div class="input-wrap">
-                        <input
-                            type="email"
-                            id="email"
-                            name="email"
-                            placeholder="you@example.com"
-                            required
-                            autocomplete="email"
-                            value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
-                        >
+                        <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
                         <i class="fas fa-envelope left"></i>
                     </div>
                 </div>
@@ -440,31 +540,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="field">
                     <label for="phone">Phone <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
                     <div class="input-wrap">
-                        <input
-                            type="tel"
-                            id="phone"
-                            name="phone"
-                            placeholder="+251 9XX XXX XXX"
-                            autocomplete="tel"
-                            value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>"
-                        >
+                        <input type="tel" id="phone" name="phone" placeholder="+251 9XX XXX XXX" autocomplete="tel" value="<?php echo htmlspecialchars($_POST['phone'] ?? ''); ?>">
                         <i class="fas fa-phone left"></i>
+                    </div>
+                </div>
+
+                <!-- Company Fields (hidden by default) -->
+                <div id="companyFields" class="company-fields">
+                    <div class="field full">
+                        <label for="business_name">Business Name *</label>
+                        <div class="input-wrap">
+                            <input type="text" id="business_name" name="business_name" placeholder="Your Company Name" value="<?php echo htmlspecialchars($_POST['business_name'] ?? ''); ?>">
+                            <i class="fas fa-building left"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="field full">
+                        <label for="business_type">Business Type</label>
+                        <div class="input-wrap">
+                            <select id="business_type" name="business_type">
+                                <option value="">Select business type</option>
+                                <option value="Technology" <?php echo ($_POST['business_type'] ?? '') == 'Technology' ? 'selected' : ''; ?>>Technology / IT</option>
+                                <option value="Construction" <?php echo ($_POST['business_type'] ?? '') == 'Construction' ? 'selected' : ''; ?>>Construction</option>
+                                <option value="Manufacturing" <?php echo ($_POST['business_type'] ?? '') == 'Manufacturing' ? 'selected' : ''; ?>>Manufacturing</option>
+                                <option value="Trading" <?php echo ($_POST['business_type'] ?? '') == 'Trading' ? 'selected' : ''; ?>>Trading / Import-Export</option>
+                                <option value="Services" <?php echo ($_POST['business_type'] ?? '') == 'Services' ? 'selected' : ''; ?>>Services</option>
+                                <option value="Retail" <?php echo ($_POST['business_type'] ?? '') == 'Retail' ? 'selected' : ''; ?>>Retail</option>
+                                <option value="Other" <?php echo ($_POST['business_type'] ?? '') == 'Other' ? 'selected' : ''; ?>>Other</option>
+                            </select>
+                            <i class="fas fa-briefcase left"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="field">
+                        <label for="tax_id">TIN Number *</label>
+                        <div class="input-wrap">
+                            <input type="text" id="tax_id" name="tax_id" placeholder="1234567890" value="<?php echo htmlspecialchars($_POST['tax_id'] ?? ''); ?>">
+                            <i class="fas fa-id-card left"></i>
+                        </div>
+                        <div class="info-text">Tax Identification Number (10-15 digits)</div>
+                    </div>
+                    
+                    <div class="field">
+                        <label for="business_address">Business Address</label>
+                        <div class="input-wrap">
+                            <input type="text" id="business_address" name="business_address" placeholder="Addis Ababa, Bole Sub-city" value="<?php echo htmlspecialchars($_POST['business_address'] ?? ''); ?>">
+                            <i class="fas fa-map-marker-alt left"></i>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Password -->
                 <div class="field">
-                    <label for="password">Password</label>
+                    <label for="password">Password *</label>
                     <div class="input-wrap">
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            placeholder="Min. 6 characters"
-                            required
-                            minlength="6"
-                            autocomplete="new-password"
-                        >
+                        <input type="password" id="password" name="password" placeholder="Min. 6 characters" required minlength="6" autocomplete="new-password">
                         <i class="fas fa-lock left"></i>
                         <i class="fas fa-eye toggle-pw" id="togglePassword"></i>
                     </div>
@@ -478,23 +608,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <!-- Confirm Password -->
                 <div class="field">
-                    <label for="confirm_password">Confirm Password</label>
+                    <label for="confirm_password">Confirm Password *</label>
                     <div class="input-wrap">
-                        <input
-                            type="password"
-                            id="confirm_password"
-                            name="confirm_password"
-                            placeholder="Re-enter password"
-                            required
-                            autocomplete="new-password"
-                        >
+                        <input type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter password" required autocomplete="new-password">
                         <i class="fas fa-lock left"></i>
                         <i class="fas match-icon" id="matchIcon"></i>
                         <i class="fas fa-eye toggle-pw" id="toggleConfirm"></i>
                     </div>
                 </div>
 
-            </div><!-- /form-grid -->
+            </div>
 
             <button type="submit" class="btn-submit">
                 <i class="fas fa-user-plus"></i>
@@ -506,11 +629,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Already have an account? <a href="login.php">Sign in</a>
         </p>
 
-    </div><!-- /card-body -->
-</div><!-- /card -->
+    </div>
+</div>
 
 <script>
-    /* ── Password strength ──────────────────────────── */
+    // Account type selection
+    function selectAccountType(type) {
+        document.getElementById('accountType').value = type;
+        
+        // Update UI
+        document.querySelectorAll('.type-option').forEach(opt => {
+            opt.classList.remove('selected');
+        });
+        document.querySelector(`.type-option[data-type="${type}"]`).classList.add('selected');
+        
+        // Show/hide company fields
+        const companyFields = document.getElementById('companyFields');
+        if (type === 'company') {
+            companyFields.classList.add('active');
+            // Make company fields required
+            document.getElementById('business_name').required = true;
+            document.getElementById('tax_id').required = true;
+        } else {
+            companyFields.classList.remove('active');
+            document.getElementById('business_name').required = false;
+            document.getElementById('tax_id').required = false;
+        }
+    }
+
+    // Password strength
     const pwInput      = document.getElementById('password');
     const strengthFill = document.getElementById('strengthFill');
     const strengthLbl  = document.getElementById('strengthLabel');
@@ -538,10 +685,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         strengthLbl.style.color            = levels[lvl].color || 'var(--muted)';
         strengthLbl.textContent            = levels[lvl].label;
 
-        checkMatch(); // re-check match if password changes
+        checkMatch();
     });
 
-    /* ── Confirm match indicator ────────────────────── */
+    // Confirm match indicator
     const confirmInput = document.getElementById('confirm_password');
     const matchIcon    = document.getElementById('matchIcon');
 
@@ -558,7 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     confirmInput.addEventListener('input', checkMatch);
 
-    /* ── Password toggles ───────────────────────────── */
+    // Password toggles
     function makeToggle(btnId, inputId) {
         document.getElementById(btnId).addEventListener('click', function () {
             const inp  = document.getElementById(inputId);
