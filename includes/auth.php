@@ -1,5 +1,5 @@
 <?php
-// includes/auth.php - Fixed authentication functions
+// includes/auth.php - Updated with company support
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -7,10 +7,6 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/functions.php';
-
-// ============================================
-// USER AUTHENTICATION FUNCTIONS
-// ============================================
 
 function isLoggedIn() {
     return isset($_SESSION['user_logged_in']) && $_SESSION['user_logged_in'] === true;
@@ -64,10 +60,6 @@ function userLogout() {
     header('Location: /broker_system/auth/login.php');
     exit;
 }
-
-// ============================================
-// ADMIN AUTHENTICATION (Deprecated - use unified)
-// ============================================
 
 function isAdminLoggedIn() {
     return isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;

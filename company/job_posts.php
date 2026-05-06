@@ -373,7 +373,7 @@ $conn->close();
 </div>
 
 <!-- Create/Edit Form -->
-<?php if (isset($_GET['action']) && $_GET['action'] == 'create') || $edit_job): ?>
+<?php if ((isset($_GET['action']) && $_GET['action'] == 'create') || $edit_job): ?>
     <div class="card">
         <h2 style="font-size: 20px; margin-bottom: 20px;">
             <i class="fas fa-<?php echo $edit_job ? 'edit' : 'plus-circle'; ?>"></i> 

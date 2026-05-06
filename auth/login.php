@@ -1,13 +1,16 @@
 <?php
-// auth/login.php - Unified Login Page (Fixed Redirect Loop)
+// auth/login.php - Unified Login Page (FIXED for Company)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 
 if (isLoggedIn()) {
+    // Redirect based on role
     if ($_SESSION['user_role'] == 'admin') {
         header('Location: /broker_system/admin/dashboard.php');
+    } elseif ($_SESSION['user_role'] == 'company') {
+        header('Location: /broker_system/company/dashboard.php');
     } else {
         header('Location: /broker_system/user/dashboard.php');
     }
@@ -43,8 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
 
+                // Role-based redirect
                 if ($user['role'] == 'admin') {
                     header('Location: /broker_system/admin/dashboard.php');
+                } elseif ($user['role'] == 'company') {
+                    header('Location: /broker_system/company/dashboard.php');
                 } else {
                     $redirect = $_SESSION['redirect_after_login'] ?? '/broker_system/user/dashboard.php';
                     unset($_SESSION['redirect_after_login']);
@@ -71,7 +77,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* ── Reset & Base ──────────────────────────────── */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
@@ -103,12 +108,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             align-items: center;
             justify-content: center;
             padding: 16px;
-            /* Subtle dot-grid background */
             background-image: radial-gradient(circle, #c7cef5 1px, transparent 1px);
             background-size: 22px 22px;
         }
 
-        /* ── Card ──────────────────────────────────────── */
         .card {
             background: var(--surface);
             border-radius: var(--radius-lg);
@@ -119,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             overflow: hidden;
         }
 
-        /* ── Header ────────────────────────────────────── */
         .card-header {
             padding: 28px 28px 20px;
             border-bottom: 1px solid var(--border);
@@ -154,10 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 2px;
         }
 
-        /* ── Body ──────────────────────────────────────── */
         .card-body { padding: 24px 28px; }
 
-        /* ── Alert ─────────────────────────────────────── */
         .alert {
             display: flex;
             align-items: center;
@@ -178,7 +178,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* ── Form ──────────────────────────────────────── */
         .field { margin-bottom: 16px; }
 
         label {
@@ -239,7 +238,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .toggle-pw:hover { color: var(--brand); }
 
-        /* ── Submit Button ─────────────────────────────── */
         .btn-submit {
             width: 100%;
             height: 42px;
@@ -267,7 +265,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .btn-submit:active { transform: translateY(0); }
 
-        /* ── Footer links ──────────────────────────────── */
         .footer-links {
             margin-top: 16px;
             text-align: center;
@@ -284,7 +281,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .footer-links a:hover { color: var(--brand-dark); }
 
-        /* ── Demo Credentials ──────────────────────────── */
         .demo {
             margin-top: 18px;
             border: 1px solid var(--border);
@@ -350,6 +346,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .badge-admin { background: #fff3e0; color: #b45309; }
         .badge-user  { background: #e8f0fe; color: #1a56db; }
+        .badge-company { background: #d1fae5; color: #059669; }
 
         .demo-creds {
             font-family: var(--mono);
@@ -358,7 +355,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-align: right;
         }
 
-        /* ── Trust Pills ───────────────────────────────── */
         .trust-row {
             display: flex;
             justify-content: center;
@@ -383,7 +379,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .pill i { font-size: 10px; }
 
-        /* ── Responsive ────────────────────────────────── */
         @media (max-width: 440px) {
             body { background-size: 18px 18px; }
             .card-header, .card-body { padding-left: 20px; padding-right: 20px; }
@@ -394,7 +389,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="card">
 
-    <!-- Header -->
     <div class="card-header">
         <div class="logo">
             <i class="fas fa-store"></i>
@@ -405,7 +399,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <!-- Body -->
     <div class="card-body">
 
         <?php if ($error): ?>
@@ -461,7 +454,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Don't have an account? <a href="register.php">Create one free</a>
         </p>
 
-        <!-- Demo Credentials (collapsible) -->
         <div class="demo">
             <button class="demo-toggle" id="demoToggle" aria-expanded="false" aria-controls="demoBody">
                 <span><i class="fas fa-circle-info" style="margin-right:6px;"></i>Demo accounts</span>
@@ -474,30 +466,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span class="demo-creds">admin@brokerplace.com · admin123</span>
                 </div>
                 <div class="demo-row">
+                    <span class="demo-label">Company</span>
+                    <span class="badge badge-company">Company</span>
+                    <span class="demo-creds">company@example.com · password123</span>
+                </div>
+                <div class="demo-row">
                     <span class="demo-label">User</span>
                     <span class="badge badge-user">Regular</span>
                     <span class="demo-creds">user@example.com · password123</span>
                 </div>
-                <div class="demo-row">
-                    <span class="demo-label">Company</span>
-                    <span class="badge badge-user">Company</span>
-                    <span class="demo-creds">company@example.com · password123</span>
-                </div>
             </div>
         </div>
 
-        <!-- Trust Pills -->
         <div class="trust-row">
             <span class="pill"><i class="fas fa-shield-alt"></i> Secure Escrow</span>
             <span class="pill"><i class="fas fa-clock"></i> 24/7 Support</span>
             <span class="pill"><i class="fas fa-gift"></i> 100 ETB Bonus</span>
         </div>
 
-    </div><!-- /card-body -->
-</div><!-- /card -->
+    </div>
+</div>
 
 <script>
-    // Password toggle
     document.getElementById('togglePassword').addEventListener('click', function () {
         const pw   = document.getElementById('password');
         const show = pw.type === 'password';
@@ -506,7 +496,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         this.classList.toggle('fa-eye-slash',  show);
     });
 
-    // Demo credentials accordion
     const demoToggle = document.getElementById('demoToggle');
     const demoBody   = document.getElementById('demoBody');
 
