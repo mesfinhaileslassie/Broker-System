@@ -60,9 +60,9 @@ $conn->close();
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Admin Dashboard - Ethio Brokerplace</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         * {
@@ -73,26 +73,29 @@ $conn->close();
 
         body {
             font-family: 'Inter', sans-serif;
-            background: #f1f5f9;
+            background: #f0f2f6;
             overflow-x: hidden;
         }
 
-        /* Sidebar Styles */
+        /* ===== SIDEBAR v2 ===== */
         .sidebar {
             position: fixed;
             left: 0;
             top: 0;
-            width: 280px;
+            width: 270px;
             height: 100%;
-            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-            color: white;
-            transition: all 0.3s ease;
-            z-index: 1000;
+            background: #0f172a;
+            backdrop-filter: blur(0px);
+            color: #e2e8f0;
+            transition: all 0.25s ease-in-out;
+            z-index: 1050;
             overflow-y: auto;
+            scrollbar-width: thin;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.08);
         }
 
         .sidebar.collapsed {
-            width: 80px;
+            width: 88px;
         }
 
         .sidebar.collapsed .logo-text,
@@ -105,14 +108,16 @@ $conn->close();
         .sidebar.collapsed .menu-item {
             justify-content: center;
             padding: 12px;
+            gap: 0;
         }
 
         .sidebar.collapsed .menu-item i {
-            margin-right: 0;
+            margin-right: 0 !important;
+            font-size: 1.4rem;
         }
 
         .sidebar-header {
-            padding: 24px;
+            padding: 22px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -122,106 +127,119 @@ $conn->close();
         .logo {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
         }
 
         .logo-icon {
             font-size: 28px;
+            background: linear-gradient(135deg, #a57cff, #4f46e5);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .logo-text {
-            font-size: 18px;
+            font-size: 1.2rem;
             font-weight: 700;
+            letter-spacing: -0.3px;
+            background: linear-gradient(135deg, #fff, #cbd5e1);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .collapse-btn {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.08);
             border: none;
-            color: white;
+            color: #cbd5e1;
             width: 32px;
             height: 32px;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .collapse-btn:hover {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.18);
+            color: white;
         }
 
         .nav-menu {
             list-style: none;
-            padding: 20px 16px;
+            padding: 20px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
         .menu-item {
             display: flex;
             align-items: center;
+            gap: 14px;
             padding: 12px 16px;
-            margin: 4px 0;
-            border-radius: 12px;
-            color: #cbd5e1;
+            border-radius: 14px;
+            color: #cbd5e6;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
             text-decoration: none;
+            font-weight: 500;
         }
 
         .menu-item i {
             width: 24px;
-            font-size: 18px;
-            margin-right: 12px;
+            font-size: 1.25rem;
+            text-align: center;
         }
 
         .menu-item span {
-            font-size: 14px;
-            font-weight: 500;
+            font-size: 0.9rem;
         }
 
         .menu-item:hover {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.08);
             color: white;
         }
 
         .menu-item.active {
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(115deg, #4f46e5, #7c3aed);
             color: white;
+            box-shadow: 0 4px 10px rgba(79,70,229,0.25);
         }
 
         .sidebar-footer {
             position: absolute;
-            bottom: 0;
+            bottom: 20px;
             left: 0;
             right: 0;
-            padding: 20px 16px;
-            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 16px 14px;
+            border-top: 1px solid rgba(255,255,255,0.07);
         }
 
         .profile-item {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.3s;
+            padding: 10px 12px;
+            border-radius: 14px;
             text-decoration: none;
-            color: white;
-        }
-
-        .profile-item:hover {
-            background: rgba(255,255,255,0.1);
+            color: #e2e8f0;
+            margin-bottom: 8px;
         }
 
         .profile-avatar {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(145deg, #4f46e5, #6b21a5);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 16px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 3px 7px rgba(0,0,0,0.2);
         }
 
         .profile-info {
@@ -229,174 +247,202 @@ $conn->close();
         }
 
         .profile-name {
-            font-size: 14px;
+            font-size: 0.85rem;
             font-weight: 600;
         }
 
         .profile-email {
-            font-size: 11px;
+            font-size: 0.7rem;
             color: #94a3b8;
         }
 
-        /* Main Content */
+        /* ===== MAIN PANEL ===== */
         .main-content {
-            margin-left: 280px;
-            transition: all 0.3s ease;
+            margin-left: 270px;
+            transition: margin 0.25s ease-in-out;
             min-height: 100vh;
+            background: #f8fafc;
         }
 
         .main-content.expanded {
-            margin-left: 80px;
+            margin-left: 88px;
         }
 
         .top-bar {
             background: white;
-            padding: 16px 24px;
+            padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             position: sticky;
             top: 0;
-            z-index: 100;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            z-index: 1020;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.02);
+            backdrop-filter: blur(2px);
         }
 
         .page-title {
-            font-size: 24px;
+            font-size: 1.65rem;
             font-weight: 700;
-            color: #0f172a;
+            background: linear-gradient(135deg, #0f172a, #2d3a5e);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            letter-spacing: -0.4px;
         }
 
         .admin-info {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 1.2rem;
         }
 
         .logout-btn {
-            padding: 8px 20px;
-            background: linear-gradient(135deg, #ef4444, #dc2626);
+            padding: 0.45rem 1.2rem;
+            background: #ef4444;
             color: white;
-            border-radius: 30px;
+            border-radius: 40px;
             text-decoration: none;
             font-weight: 500;
-            transition: all 0.3s;
+            font-size: 0.8rem;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .logout-btn:hover {
-            transform: translateY(-2px);
+            background: #dc2626;
+            transform: translateY(-1px);
         }
 
         .container {
-            padding: 24px;
+            padding: 28px 28px;
+            max-width: 1600px;
         }
 
-        /* Stats Grid */
+        /* Stats Grid (Glassmorphism subtle) */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 28px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.3rem;
+            margin-bottom: 2rem;
         }
 
         .stat-card {
             background: white;
-            border-radius: 20px;
-            padding: 20px;
-            transition: all 0.3s;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-radius: 28px;
+            padding: 1.2rem 1.2rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.03);
+            border: 1px solid rgba(0,0,0,0.03);
         }
 
         .stat-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 12px 24px -8px rgba(0,0,0,0.15);
+            box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.08);
+            border-color: #eef2ff;
         }
 
         .stat-icon {
-            font-size: 28px;
-            margin-bottom: 12px;
+            font-size: 2rem;
+            margin-bottom: 0.8rem;
+            display: inline-block;
         }
 
         .stat-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #0f172a;
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #0a0c10;
+            line-height: 1.2;
         }
 
         .stat-label {
-            font-size: 13px;
-            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #5b6e8c;
             margin-top: 6px;
         }
 
         .stat-trend {
-            font-size: 11px;
+            font-size: 0.7rem;
             margin-top: 8px;
-            color: #f59e0b;
+            color: #f97316;
+            font-weight: 500;
         }
 
         /* Alert Banner */
         .alert-banner {
-            background: #fef3c7;
-            border-radius: 16px;
-            padding: 16px 20px;
-            margin-bottom: 24px;
+            background: #fffbeb;
+            border-radius: 20px;
+            padding: 0.8rem 1.5rem;
+            margin-bottom: 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 12px;
+            border-left: 5px solid #f59e0b;
         }
 
         .alert-content {
             display: flex;
             align-items: center;
             gap: 12px;
-            color: #92400e;
+            color: #b45309;
+            font-weight: 500;
         }
 
         .alert-btn {
-            background: #f59e0b;
+            background: #f97316;
             color: white;
-            padding: 8px 20px;
-            border-radius: 30px;
+            padding: 0.4rem 1.2rem;
+            border-radius: 40px;
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 0.8rem;
         }
 
         /* Cards */
         .card {
-            background: white;
-            border-radius: 20px;
-            padding: 24px;
-            margin-bottom: 28px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            background: #ffffff;
+            border-radius: 28px;
+            padding: 1.2rem 1.2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02);
+            border: 1px solid #eef2f6;
         }
 
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 2px solid #f1f5f9;
+            margin-bottom: 1rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 2px solid #f0f2f8;
         }
 
         .card-header h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .card-header a {
-            font-size: 12px;
-            color: #667eea;
+            font-size: 0.75rem;
+            color: #4f46e5;
             text-decoration: none;
+            font-weight: 600;
         }
 
-        /* Tables */
+        /* Table */
         .table-wrapper {
             overflow-x: auto;
+            border-radius: 20px;
         }
 
         table {
@@ -405,77 +451,97 @@ $conn->close();
         }
 
         th, td {
-            padding: 12px 8px;
+            padding: 0.9rem 0.6rem;
             text-align: left;
-            border-bottom: 1px solid #f1f5f9;
-            font-size: 13px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.8rem;
         }
 
         th {
             font-weight: 600;
-            color: #64748b;
+            color: #475569;
         }
 
-        tr:hover {
-            background: #f8fafc;
+        tr:hover td {
+            background-color: #fafcff;
         }
 
         /* Badges */
         .badge {
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 500;
+            padding: 0.2rem 0.7rem;
+            border-radius: 100px;
+            font-size: 0.7rem;
+            font-weight: 600;
             display: inline-block;
         }
 
-        .badge-success { background: #d1fae5; color: #059669; }
-        .badge-warning { background: #fed7aa; color: #ea580c; }
-        .badge-danger { background: #fee2e2; color: #dc2626; }
-        .badge-info { background: #dbeafe; color: #2563eb; }
+        .badge-success { background: #dcfce7; color: #15803d; }
+        .badge-warning { background: #ffedd5; color: #b45309; }
+        .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .badge-info { background: #e0f2fe; color: #0369a1; }
 
-        /* Buttons */
         .btn-sm {
-            padding: 4px 10px;
-            font-size: 11px;
-            border-radius: 6px;
+            padding: 0.2rem 0.9rem;
+            font-size: 0.7rem;
+            border-radius: 30px;
             border: none;
             cursor: pointer;
             text-decoration: none;
             display: inline-block;
+            font-weight: 500;
         }
 
-        .btn-primary { background: #667eea; color: white; }
+        .btn-primary {
+            background: #4f46e5;
+            color: white;
+            transition: 0.15s;
+        }
+        .btn-primary:hover { background: #4338ca; }
 
-        @media (max-width: 1024px) {
-            .sidebar { width: 80px; }
+        /* Two column layout */
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.8rem;
+        }
+
+        @media (max-width: 1000px) {
+            .sidebar { width: 88px; }
             .sidebar .logo-text, .sidebar .menu-label, .sidebar .profile-name, .sidebar .profile-email { display: none; }
-            .sidebar .menu-item { justify-content: center; padding: 12px; }
+            .sidebar .menu-item { justify-content: center; gap: 0; }
             .sidebar .menu-item i { margin-right: 0; }
-            .main-content { margin-left: 80px; }
+            .main-content { margin-left: 88px; }
+            .two-columns { grid-template-columns: 1fr; gap: 1rem; }
         }
 
-        @media (max-width: 768px) {
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        @media (max-width: 640px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 0.8rem; }
+            .container { padding: 16px; }
+            .top-bar { padding: 0.8rem 1rem; flex-wrap: wrap; gap: 10px; }
         }
+
+        /* utility */
+        .cursor-pointer { cursor: pointer; }
+        .text-muted { color: #6c757d; }
     </style>
 </head>
 <body>
-    <!-- SIDEBAR -->
+
+    <!-- SIDEBAR (REDESIGN, BUTTONS/FUNC SAME) -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
-                <span class="logo-icon">🏪</span>
+                <span class="logo-icon">🛡️</span>
                 <span class="logo-text">Brokerplace</span>
             </div>
-            <button class="collapse-btn" id="collapseBtn">
+            <button class="collapse-btn" id="collapseBtn" aria-label="Toggle Sidebar">
                 <i class="fas fa-chevron-left"></i>
             </button>
         </div>
 
         <ul class="nav-menu">
             <a href="dashboard.php" class="menu-item active">
-                <i class="fas fa-tachometer-alt"></i>
+                <i class="fas fa-chart-line"></i>
                 <span class="menu-label">Dashboard</span>
             </a>
             <a href="users.php" class="menu-item">
@@ -499,7 +565,7 @@ $conn->close();
                 <span class="menu-label">Withdrawals</span>
             </a>
             <a href="settings.php" class="menu-item">
-                <i class="fas fa-cog"></i>
+                <i class="fas fa-sliders-h"></i>
                 <span class="menu-label">Settings</span>
             </a>
         </ul>
@@ -509,11 +575,11 @@ $conn->close();
                 <div class="profile-avatar"><?php echo strtoupper(substr($admin_name, 0, 1)); ?></div>
                 <div class="profile-info">
                     <div class="profile-name"><?php echo htmlspecialchars($admin_name); ?></div>
-                    <div class="profile-email">Administrator</div>
+                    <div class="profile-email">Admin · Superuser</div>
                 </div>
             </div>
-            <a href="../auth/logout.php" class="menu-item" style="margin-top: 8px;">
-                <i class="fas fa-sign-out-alt logout-icon"></i>
+            <a href="../auth/logout.php" class="menu-item" style="margin-top: 6px;">
+                <i class="fas fa-sign-out-alt"></i>
                 <span class="menu-label">Logout</span>
             </a>
         </div>
@@ -522,153 +588,120 @@ $conn->close();
     <!-- MAIN CONTENT -->
     <div class="main-content" id="mainContent">
         <div class="top-bar">
-            <h1 class="page-title">Dashboard</h1>
+            <h1 class="page-title"><i class="fas fa-tachometer-alt" style="font-size: 1.4rem; margin-right: 8px;"></i> Admin Dashboard</h1>
             <div class="admin-info">
-                <span><i class="fas fa-user-shield"></i> <?php echo htmlspecialchars($admin_name); ?></span>
-                <a href="../auth/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                <span style="font-weight: 500;"><i class="fas fa-user-shield"></i> <?php echo htmlspecialchars($admin_name); ?></span>
+                <a href="../auth/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Exit</a>
             </div>
         </div>
 
         <div class="container">
-            <!-- Alert Banner for Pending Approvals -->
+            <!-- Alert Banner: pending approvals (unchanged functionality) -->
             <?php if ($stats['pending_approvals'] > 0): ?>
             <div class="alert-banner">
                 <div class="alert-content">
-                    <i class="fas fa-clock"></i>
-                    <span><strong><?php echo $stats['pending_approvals']; ?> listing(s)</strong> pending approval</span>
+                    <i class="fas fa-clock fa-fw"></i>
+                    <span><strong><?php echo $stats['pending_approvals']; ?> listing(s)</strong> awaiting approval</span>
                 </div>
-                <a href="approve_listings.php" class="alert-btn">Review Now →</a>
+                <a href="approve_listings.php" class="alert-btn">Review →</a>
             </div>
             <?php endif; ?>
 
-            <!-- Stats Grid -->
+            <!-- Stats Grid (preserved values) -->
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon">👥</div>
-                    <div class="stat-value"><?php echo number_format($stats['total_users']); ?></div>
-                    <div class="stat-label">Total Users</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🏢</div>
-                    <div class="stat-value"><?php echo number_format($stats['total_companies']); ?></div>
-                    <div class="stat-label">Companies</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-value"><?php echo number_format($stats['total_transactions']); ?></div>
-                    <div class="stat-label">Transactions</div>
-                    <div class="stat-trend"><?php echo $stats['pending_transactions']; ?> pending</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">💵</div>
-                    <div class="stat-value"><?php echo formatMoney($stats['total_revenue']); ?></div>
-                    <div class="stat-label">Total Revenue</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">🔒</div>
-                    <div class="stat-value"><?php echo formatMoney($stats['escrow_held']); ?></div>
-                    <div class="stat-label">Escrow Held</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⏳</div>
-                    <div class="stat-value"><?php echo $stats['pending_approvals']; ?></div>
-                    <div class="stat-label">Pending Approvals</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon">⚖️</div>
-                    <div class="stat-value"><?php echo $stats['active_disputes']; ?></div>
-                    <div class="stat-label">Active Disputes</div>
-                </div>
+                <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-value"><?php echo number_format($stats['total_users']); ?></div><div class="stat-label">Total Users</div></div>
+                <div class="stat-card"><div class="stat-icon">🏢</div><div class="stat-value"><?php echo number_format($stats['total_companies']); ?></div><div class="stat-label">Companies</div></div>
+                <div class="stat-card"><div class="stat-icon">🔄</div><div class="stat-value"><?php echo number_format($stats['total_transactions']); ?></div><div class="stat-label">Transactions</div><div class="stat-trend"><?php echo $stats['pending_transactions']; ?> pending</div></div>
+                <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value"><?php echo formatMoney($stats['total_revenue']); ?></div><div class="stat-label">Total Revenue</div></div>
+                <div class="stat-card"><div class="stat-icon">🔒</div><div class="stat-value"><?php echo formatMoney($stats['escrow_held']); ?></div><div class="stat-label">Escrow Held</div></div>
+                <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-value"><?php echo $stats['pending_approvals']; ?></div><div class="stat-label">Pending Approvals</div></div>
+                <div class="stat-card"><div class="stat-icon">⚖️</div><div class="stat-value"><?php echo $stats['active_disputes']; ?></div><div class="stat-label">Active Disputes</div></div>
             </div>
 
-            <!-- Recent Transactions -->
+            <!-- Recent Transactions - full functionality -->
             <div class="card">
                 <div class="card-header">
-                    <h3><i class="fas fa-history"></i> Recent Transactions</h3>
-                    <a href="transactions.php">View All →</a>
+                    <h3><i class="fas fa-clock"></i> Recent Activity · Transactions</h3>
+                    <a href="transactions.php">Browse All →</a>
                 </div>
                 <div class="table-wrapper">
                     <?php if ($recentTransactions->num_rows > 0): ?>
-                        <table>
-                            <thead>
-                                <tr><th>ID</th><th>Buyer</th><th>Seller</th><th>Amount</th><th>Status</th><th>Date</th><th></th>
-                            </thead>
-                            <tbody>
-                                <?php while($row = $recentTransactions->fetch_assoc()): ?>
-                                <tr onclick="location.href='transactions.php?view=<?php echo $row['id']; ?>'" style="cursor:pointer;">
-                                    <td>#<?php echo $row['id']; ?></td>
-                                    <td><?php echo htmlspecialchars(substr($row['buyer_name'] ?? 'N/A', 0, 20)); ?></td>
-                                    <td><?php echo htmlspecialchars(substr($row['seller_name'] ?? 'N/A', 0, 20)); ?></td>
-                                    <td><?php echo formatMoney($row['total_amount']); ?></td>
-                                    <td><?php echo getStatusBadge($row['status']); ?></td>
-                                    <td><?php echo date('M d', strtotime($row['created_at'])); ?></td>
-                                    <td><a href="transactions.php?view=<?php echo $row['id']; ?>" class="btn-sm btn-primary" onclick="event.stopPropagation()">View</a></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
+                    <table>
+                        <thead>
+                            <tr><th>ID</th><th>Buyer</th><th>Seller</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            <?php while($row = $recentTransactions->fetch_assoc()): ?>
+                            <tr onclick="location.href='transactions.php?view=<?php echo $row['id']; ?>'" style="cursor:pointer;">
+                                <td>#<?php echo $row['id']; ?></td>
+                                <td><?php echo htmlspecialchars(substr($row['buyer_name'] ?? 'N/A', 0, 20)); ?></td>
+                                <td><?php echo htmlspecialchars(substr($row['seller_name'] ?? 'N/A', 0, 20)); ?></td>
+                                <td><?php echo formatMoney($row['total_amount']); ?></td>
+                                <td><?php echo getStatusBadge($row['status']); ?></td>
+                                <td><?php echo date('M d, H:i', strtotime($row['created_at'])); ?></td>
+                                <td><a href="transactions.php?view=<?php echo $row['id']; ?>" class="btn-sm btn-primary" onclick="event.stopPropagation()">Details</a></td>
+                            </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
                     <?php else: ?>
-                        <p style="text-align: center; padding: 40px; color: #64748b;">No transactions found</p>
+                    <div class="text-muted" style="text-align:center; padding:2rem;">⚠️ No recent transactions</div>
                     <?php endif; ?>
                 </div>
             </div>
 
-            <!-- Two Column Layout -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                <!-- Pending Approvals -->
+            <!-- Two column layout: Pending Listings & New Users -->
+            <div class="two-columns">
+                <!-- Pending Approvals Card -->
                 <div class="card">
                     <div class="card-header">
-                        <h3><i class="fas fa-clock"></i> Pending Approvals</h3>
-                        <a href="approve_listings.php">View All →</a>
+                        <h3><i class="fas fa-hourglass-half"></i> Pending Listings</h3>
+                        <a href="approve_listings.php">Manage →</a>
                     </div>
                     <div class="table-wrapper">
                         <?php if ($pendingListings->num_rows > 0): ?>
-                            </table>
-                                <thead>
-                                    <tr><th>Title</th><th>Seller</th><th>Price</th><th></th>
-                                </thead>
-                                <tbody>
-                                    <?php while($row = $pendingListings->fetch_assoc()): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars(substr($row['title'], 0, 20)); ?></td>
-                                        <td><?php echo htmlspecialchars($row['seller_name']); ?></td>
-                                        <td><?php echo formatMoney($row['price']); ?></td>
-                                        <td><a href="approve_listings.php" class="btn-sm btn-primary">Review</a></td>
-                                    </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
+                        <table>
+                            <thead><tr><th>Title</th><th>Seller</th><th>Price</th><th></th></tr></thead>
+                            <tbody>
+                                <?php while($row = $pendingListings->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars(substr($row['title'], 0, 28)); ?></td>
+                                    <td><?php echo htmlspecialchars($row['seller_name']); ?></td>
+                                    <td><?php echo formatMoney($row['price']); ?></td>
+                                    <td><a href="approve_listings.php" class="btn-sm btn-primary">Review</a></td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
                         <?php else: ?>
-                            <p style="text-align: center; padding: 20px; color: #64748b;">No pending approvals</p>
+                        <div style="padding: 1.5rem; text-align:center; color:#5b6e8c;">🎉 All listings approved!</div>
                         <?php endif; ?>
                     </div>
                 </div>
 
-                <!-- Recent Users -->
+                <!-- Recent Users Card -->
                 <div class="card">
                     <div class="card-header">
-                        <h3><i class="fas fa-user-plus"></i> New Users</h3>
-                        <a href="users.php">View All →</a>
+                        <h3><i class="fas fa-user-plus"></i> Newest Members</h3>
+                        <a href="users.php">All users →</a>
                     </div>
                     <div class="table-wrapper">
                         <?php if ($recentUsers->num_rows > 0): ?>
-                            <tr>
-                                <thead>
-                                    <tr><th>Name</th><th>Email</th><th>Joined</th><th></th>
-                                </thead>
-                                <tbody>
-                                    <?php while($row = $recentUsers->fetch_assoc()): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars(substr($row['full_name'], 0, 15)); ?></td>
-                                        <td><?php echo htmlspecialchars(substr($row['email'], 0, 20)); ?></td>
-                                        <td><?php echo date('M d', strtotime($row['created_at'])); ?></td>
-                                        <td><a href="users.php?view=<?php echo $row['id']; ?>" class="btn-sm btn-primary">View</a></td>
-                                    </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
+                        <table>
+                            <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th></th></tr></thead>
+                            <tbody>
+                                <?php while($row = $recentUsers->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars(substr($row['full_name'], 0, 16)); ?></td>
+                                    <td><?php echo htmlspecialchars(substr($row['email'], 0, 18)); ?></td>
+                                    <td><?php echo date('M d', strtotime($row['created_at'])); ?></td>
+                                    <td><a href="users.php?view=<?php echo $row['id']; ?>" class="btn-sm btn-primary">Profile</a></td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
                         <?php else: ?>
-                            <p style="text-align: center; padding: 20px; color: #64748b;">No recent users</p>
+                        <div style="padding: 1.5rem; text-align:center; color:#5b6e8c;">No recent signups</div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -677,37 +710,45 @@ $conn->close();
     </div>
 
     <script>
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('mainContent');
-        const collapseBtn = document.getElementById('collapseBtn');
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            const collapseBtn = document.getElementById('collapseBtn');
 
-        if (collapseBtn) {
-            collapseBtn.addEventListener('click', () => {
+            function toggleSidebar() {
+                if (!sidebar || !mainContent) return;
                 sidebar.classList.toggle('collapsed');
                 mainContent.classList.toggle('expanded');
-                
-                const icon = collapseBtn.querySelector('i');
+                const icon = collapseBtn?.querySelector('i');
                 if (sidebar.classList.contains('collapsed')) {
+                    if (icon) {
+                        icon.classList.remove('fa-chevron-left');
+                        icon.classList.add('fa-chevron-right');
+                    }
+                } else {
+                    if (icon) {
+                        icon.classList.remove('fa-chevron-right');
+                        icon.classList.add('fa-chevron-left');
+                    }
+                }
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            }
+
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', toggleSidebar);
+            }
+
+            // load saved state
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                sidebar.classList.add('collapsed');
+                mainContent.classList.add('expanded');
+                const icon = collapseBtn?.querySelector('i');
+                if (icon) {
                     icon.classList.remove('fa-chevron-left');
                     icon.classList.add('fa-chevron-right');
-                } else {
-                    icon.classList.remove('fa-chevron-right');
-                    icon.classList.add('fa-chevron-left');
                 }
-                
-                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            });
-        }
-
-        if (localStorage.getItem('sidebarCollapsed') === 'true') {
-            sidebar.classList.add('collapsed');
-            mainContent.classList.add('expanded');
-            if (collapseBtn) {
-                const icon = collapseBtn.querySelector('i');
-                icon.classList.remove('fa-chevron-left');
-                icon.classList.add('fa-chevron-right');
             }
-        }
+        })();
     </script>
 </body>
 </html>
