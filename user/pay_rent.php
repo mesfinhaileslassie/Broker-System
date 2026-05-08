@@ -1,5 +1,5 @@
 <?php
-// user/pay_listing.php - Beautiful Seller Payment Page
+// user/pay_rent.php - Buyer pays deposit for rental/service
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -7,65 +7,48 @@ require_once '../includes/auth.php';
 
 requireLogin();
 
-$page_title = 'Activate Listing - Payment';
+$page_title = 'Complete Payment';
 ob_start();
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
-$listing_id = isset($_GET['listing_id']) ? intval($_GET['listing_id']) : 0;
+$transaction_id = isset($_GET['transaction_id']) ? intval($_GET['transaction_id']) : 0;
 $error = '';
 $success = '';
 
-// Get listing details
-$listing = $conn->query("
-    SELECT l.*, 
-           l.admin_deposit_percent as deposit_percent, 
-           l.admin_commission_percent as commission_percent
-    FROM listings l
-    WHERE l.id = $listing_id 
-    AND l.seller_id = $user_id 
-    AND l.approval_status = 'approved'
-    AND l.status = 'pending'
-")->fetch_assoc();
-
-if (!$listing) {
-    header('Location: listings.php');
-    exit;
-}
-
-// Calculate payment amount
-$deposit_amount = $listing['price'] * ($listing['deposit_percent'] / 100);
-$commission_amount = $listing['price'] * ($listing['commission_percent'] / 100);
-$total_payment = $deposit_amount + $commission_amount;
-
-// Check if already paid
-$existing_payment = $conn->query("
-    SELECT p.* FROM payments p
-    JOIN transactions t ON p.transaction_id = t.id
-    WHERE t.listing_id = $listing_id AND p.user_id = $user_id AND p.status = 'confirmed'
-");
-
-if ($existing_payment->num_rows > 0) {
-    $conn->query("UPDATE listings SET status = 'active' WHERE id = $listing_id");
-    header("Location: listings.php?msg=activated");
-    exit;
-}
-
-// Get or create transaction
+// Get transaction details
 $transaction = $conn->query("
-    SELECT id FROM transactions WHERE listing_id = $listing_id AND seller_id = $user_id
+    SELECT t.*, l.title, l.type, l.price, l.admin_deposit_percent, l.admin_commission_percent,
+           u.full_name as seller_name, u.id as seller_id
+    FROM transactions t
+    JOIN listings l ON t.listing_id = l.id
+    JOIN users u ON t.seller_id = u.id
+    WHERE t.id = $transaction_id AND t.buyer_id = $user_id
 ")->fetch_assoc();
 
 if (!$transaction) {
-    $stmt = $conn->prepare("
-        INSERT INTO transactions (listing_id, buyer_id, seller_id, total_amount, deposit_amount, commission_amount, remaining_balance, status) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_seller_deposit')
-    ");
-    $stmt->bind_param("iiiiddd", $listing_id, $user_id, $user_id, $listing['price'], $deposit_amount, $commission_amount, $listing['price']);
-    $stmt->execute();
-    $transaction_id = $conn->insert_id;
-} else {
-    $transaction_id = $transaction['id'];
+    header('Location: dashboard.php');
+    exit;
+}
+
+// Calculate payment amount (buyer pays deposit + commission for rentals)
+$depositPercent = $transaction['admin_deposit_percent'] ?? 30;
+$commissionPercent = $transaction['admin_commission_percent'] ?? 15;
+$depositAmount = $transaction['total_amount'] * ($depositPercent / 100);
+$commissionAmount = $transaction['total_amount'] * ($commissionPercent / 100);
+$totalPayment = $depositAmount + $commissionAmount;
+
+// Check if already paid
+$existing_payment = $conn->query("
+    SELECT * FROM payments 
+    WHERE transaction_id = $transaction_id AND user_id = $user_id AND status = 'confirmed'
+");
+
+$already_paid = $existing_payment->num_rows > 0;
+
+if ($already_paid) {
+    header("Location: transaction.php?id=$transaction_id");
+    exit;
 }
 
 // Get or generate payment code
@@ -89,9 +72,9 @@ if ($payment_code_data) {
     
     $stmt = $conn->prepare("
         INSERT INTO payment_codes (code, transaction_id, amount, user_id, type, expires_at, status) 
-        VALUES (?, ?, ?, ?, 'deposit_seller', ?, 'pending')
+        VALUES (?, ?, ?, ?, 'deposit_buyer', ?, 'pending')
     ");
-    $stmt->bind_param("siids", $payment_code, $transaction_id, $total_payment, $user_id, $expires_at);
+    $stmt->bind_param("siids", $payment_code, $transaction_id, $totalPayment, $user_id, $expires_at);
     $stmt->execute();
 }
 
@@ -119,7 +102,7 @@ $conn->close();
     .payment-header {
         background: linear-gradient(135deg, var(--primary), var(--secondary));
         border-radius: 28px;
-        padding: 40px;
+        padding: 32px;
         margin-bottom: 28px;
         color: white;
         text-align: center;
@@ -147,8 +130,8 @@ $conn->close();
     .payment-header h1 {
         position: relative;
         z-index: 1;
-        font-size: 32px;
-        font-weight: 800;
+        font-size: 28px;
+        font-weight: 700;
         margin-bottom: 8px;
     }
     
@@ -162,67 +145,62 @@ $conn->close();
     .card {
         background: white;
         border-radius: 24px;
-        padding: 32px;
+        padding: 28px;
         margin-bottom: 24px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         border: 1px solid var(--border);
     }
     
     .card-title {
-        font-size: 20px;
-        font-weight: 700;
+        font-size: 18px;
+        font-weight: 600;
         color: var(--dark);
-        margin-bottom: 24px;
-        padding-bottom: 16px;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
         border-bottom: 2px solid var(--border);
         display: flex;
         align-items: center;
-        gap: 12px;
-    }
-    
-    .card-title i {
-        color: var(--primary);
+        gap: 10px;
     }
     
     .item-details {
-        background: linear-gradient(135deg, var(--light), white);
+        background: var(--light);
         border-radius: 20px;
-        padding: 24px;
-        margin-bottom: 24px;
-        border: 1px solid var(--border);
+        padding: 20px;
+        margin-bottom: 20px;
     }
     
     .item-name {
-        font-size: 20px;
+        font-size: 18px;
         font-weight: 700;
         color: var(--dark);
         margin-bottom: 8px;
     }
     
-    .property-type {
+    .item-type {
         display: inline-block;
         padding: 4px 12px;
         background: var(--primary);
         color: white;
         border-radius: 20px;
         font-size: 11px;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
     }
     
     .price-breakdown {
-        margin-top: 20px;
+        margin-top: 16px;
     }
     
     .breakdown-row {
         display: flex;
         justify-content: space-between;
-        padding: 12px 0;
+        padding: 10px 0;
         border-bottom: 1px solid var(--border);
     }
     
     .breakdown-row.total {
-        font-weight: 800;
-        font-size: 20px;
+        font-weight: 700;
+        font-size: 18px;
         color: var(--primary);
         border-top: 2px solid var(--border);
         border-bottom: none;
@@ -232,59 +210,40 @@ $conn->close();
     
     .code-box {
         background: linear-gradient(135deg, var(--primary), var(--secondary));
-        border-radius: 24px;
-        padding: 40px;
+        border-radius: 20px;
+        padding: 30px;
         text-align: center;
         margin-bottom: 24px;
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .code-box::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
-        background-size: 20px 20px;
     }
     
     .code-label {
-        font-size: 13px;
+        font-size: 12px;
         color: rgba(255,255,255,0.8);
-        margin-bottom: 12px;
-        text-transform: uppercase;
-        letter-spacing: 2px;
+        margin-bottom: 8px;
     }
     
     .payment-code {
-        font-size: 56px;
+        font-size: 48px;
         font-weight: 800;
-        letter-spacing: 16px;
+        letter-spacing: 12px;
         background: white;
         color: var(--dark);
-        padding: 24px;
-        border-radius: 20px;
-        font-family: 'Courier New', monospace;
-        margin: 20px 0;
-        position: relative;
-        z-index: 1;
+        padding: 20px;
+        border-radius: 16px;
+        font-family: monospace;
+        margin: 16px 0;
     }
     
     .copy-btn {
         background: rgba(255,255,255,0.2);
         border: none;
         color: white;
-        padding: 10px 28px;
-        border-radius: 50px;
+        padding: 8px 24px;
+        border-radius: 40px;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 500;
         cursor: pointer;
         transition: all 0.3s;
-        position: relative;
-        z-index: 1;
     }
     
     .copy-btn:hover {
@@ -293,17 +252,14 @@ $conn->close();
     }
     
     .expiry {
-        margin-top: 16px;
-        color: rgba(255,255,255,0.8);
+        margin-top: 12px;
+        color: rgba(255,255,255,0.7);
         font-size: 13px;
-        position: relative;
-        z-index: 1;
     }
     
     .timer {
-        font-family: 'Courier New', monospace;
+        font-family: monospace;
         font-weight: 700;
-        font-size: 16px;
     }
     
     .timer.warning {
@@ -312,26 +268,13 @@ $conn->close();
     
     .timer.danger {
         color: #ef4444;
-        animation: pulse 1s infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
     }
     
     .instructions {
         background: var(--light);
         border-radius: 20px;
-        padding: 24px;
+        padding: 20px;
         margin-bottom: 24px;
-    }
-    
-    .instructions h4 {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 16px;
-        color: var(--dark);
     }
     
     .step {
@@ -350,21 +293,21 @@ $conn->close();
         display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: 700;
+        font-weight: 600;
         font-size: 14px;
     }
     
     .payment-status {
         text-align: center;
-        padding: 24px;
+        padding: 20px;
         background: var(--light);
         border-radius: 20px;
     }
     
     .spinner {
         display: inline-block;
-        width: 40px;
-        height: 40px;
+        width: 30px;
+        height: 30px;
         border: 3px solid var(--border);
         border-top-color: var(--primary);
         border-radius: 50%;
@@ -375,57 +318,42 @@ $conn->close();
         to { transform: rotate(360deg); }
     }
     
+    .btn {
+        width: 100%;
+        padding: 14px;
+        border-radius: 40px;
+        font-weight: 600;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: none;
+        text-align: center;
+        display: inline-block;
+        text-decoration: none;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: white;
+    }
+    
     .checkmark {
-        width: 70px;
-        height: 70px;
+        width: 60px;
+        height: 60px;
         background: var(--success);
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto 16px;
-        font-size: 36px;
+        font-size: 32px;
         color: white;
-        animation: scaleIn 0.5s ease;
-    }
-    
-    @keyframes scaleIn {
-        from { transform: scale(0); }
-        to { transform: scale(1); }
-    }
-    
-    .dashboard-link {
-        display: inline-block;
-        margin-top: 20px;
-        padding: 12px 24px;
-        background: var(--primary);
-        color: white;
-        text-decoration: none;
-        border-radius: 50px;
-        font-weight: 600;
-        transition: all 0.3s;
-    }
-    
-    .dashboard-link:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
     
     @media (max-width: 640px) {
-        .payment-container {
-            margin: 20px auto;
-            padding: 0 16px;
-        }
-        .payment-header {
-            padding: 24px;
-        }
-        .payment-header h1 {
-            font-size: 24px;
-        }
         .payment-code {
             font-size: 28px;
-            letter-spacing: 8px;
-            padding: 16px;
+            letter-spacing: 6px;
         }
         .card {
             padding: 20px;
@@ -435,8 +363,8 @@ $conn->close();
 
 <div class="payment-container">
     <div class="payment-header">
-        <h1><i class="fas fa-rocket"></i> Activate Your Listing</h1>
-        <p>Pay deposit + commission to start receiving bookings</p>
+        <h1><i class="fas fa-credit-card"></i> Complete Payment</h1>
+        <p>Pay deposit + service fee to confirm your booking</p>
     </div>
     
     <div class="card">
@@ -445,88 +373,91 @@ $conn->close();
         </div>
         
         <div class="item-details">
-            <div class="item-name"><?php echo htmlspecialchars($listing['title']); ?></div>
-            <span class="property-type">
+            <div class="item-name"><?php echo htmlspecialchars($transaction['title']); ?></div>
+            <span class="item-type">
                 <?php 
-                if ($listing['type'] == 'rental') echo '🏠 Rental Property';
-                elseif ($listing['type'] == 'product') echo '🚗 Product for Sale';
-                else echo '💼 Job Posting';
+                if ($transaction['type'] == 'rental') echo '🏠 Rental Property';
+                elseif ($transaction['type'] == 'product') echo '🚗 Product';
+                else echo '💼 Service';
                 ?>
             </span>
             <div class="price-breakdown">
                 <div class="breakdown-row">
-                    <span><?php echo ($listing['type'] == 'rental') ? 'Monthly Rent' : (($listing['type'] == 'job') ? 'Monthly Salary' : 'Selling Price'); ?></span>
-                    <span><?php echo formatMoney($listing['price']); ?></span>
+                    <span><?php echo ($transaction['type'] == 'rental') ? 'Monthly Rent' : 'Total Price'; ?></span>
+                    <span><?php echo formatMoney($transaction['total_amount']); ?></span>
                 </div>
                 <div class="breakdown-row">
-                    <span>Deposit (<?php echo $listing['deposit_percent']; ?>%)</span>
-                    <span><?php echo formatMoney($deposit_amount); ?></span>
+                    <span>Deposit (<?php echo $depositPercent; ?>%)</span>
+                    <span><?php echo formatMoney($depositAmount); ?></span>
                 </div>
                 <div class="breakdown-row">
-                    <span>Platform Commission (<?php echo $listing['commission_percent']; ?>%)</span>
-                    <span><?php echo formatMoney($commission_amount); ?></span>
+                    <span>Service Fee (<?php echo $commissionPercent; ?>%)</span>
+                    <span><?php echo formatMoney($commissionAmount); ?></span>
                 </div>
                 <div class="breakdown-row total">
-                    <span>Total to Pay Today</span>
-                    <span><?php echo formatMoney($total_payment); ?></span>
+                    <span>Total to Pay</span>
+                    <span><?php echo formatMoney($totalPayment); ?></span>
+                </div>
+                <div class="breakdown-row">
+                    <span>Remaining Balance (pay to seller)</span>
+                    <span><?php echo formatMoney($transaction['total_amount'] - $depositAmount); ?></span>
                 </div>
             </div>
         </div>
         
+        <!-- Payment Code Box -->
         <div class="code-box">
-            <div class="code-label">
-                <i class="fas fa-key"></i> Your Telebirr Payment Code
-            </div>
+            <div class="code-label">Your Telebirr Payment Code</div>
             <div class="payment-code" id="paymentCode"><?php echo $payment_code; ?></div>
             <button class="copy-btn" onclick="copyCode()">
                 <i class="fas fa-copy"></i> Copy Code
             </button>
             <div class="expiry">
                 <i class="far fa-clock"></i> Code expires in: 
-                <span class="timer" id="timer"><?php echo gmdate("i:s", max(0, $time_left)); ?></span>
+                <span class="timer" id="timer"><?php echo gmdate("i:s", $time_left); ?></span>
             </div>
         </div>
         
+        <!-- Instructions -->
         <div class="instructions">
-            <h4><i class="fas fa-mobile-alt"></i> How to Complete Payment</h4>
+            <h4 style="margin-bottom: 12px;"><i class="fas fa-mobile-alt"></i> How to Pay with Telebirr</h4>
             <div class="step">
                 <div class="step-number">1</div>
-                <div>Open Telebirr app on your mobile phone</div>
+                <div>Open Telebirr app on your phone</div>
             </div>
             <div class="step">
                 <div class="step-number">2</div>
-                <div>Navigate to <strong>Marketplace</strong> or <strong>Pay with Code</strong> section</div>
+                <div>Go to Marketplace / Payment section</div>
             </div>
             <div class="step">
                 <div class="step-number">3</div>
-                <div>Enter the payment code: <strong style="color: var(--primary);"><?php echo $payment_code; ?></strong></div>
+                <div>Enter this code: <strong><?php echo $payment_code; ?></strong></div>
             </div>
             <div class="step">
                 <div class="step-number">4</div>
-                <div>Confirm payment with your Telebirr PIN (Demo PIN: <strong>1234</strong>)</div>
+                <div>Confirm payment with your Telebirr PIN (Test PIN: <strong>1234</strong>)</div>
             </div>
         </div>
         
+        <!-- Payment Status -->
         <div class="payment-status" id="paymentStatus">
             <div class="spinner"></div>
-            <p style="margin-top: 16px; font-weight: 500;">Waiting for payment confirmation...</p>
-            <p style="font-size: 12px; color: var(--gray); margin-top: 8px;">
-                <i class="fas fa-info-circle"></i> This page will update automatically once payment is confirmed
-            </p>
+            <p style="margin-top: 12px;">Waiting for payment confirmation...</p>
+            <p style="font-size: 12px; color: var(--gray); margin-top: 8px;">This page will auto-refresh once payment is confirmed</p>
         </div>
     </div>
 </div>
 
 <script>
 const paymentCode = '<?php echo $payment_code; ?>';
-const listingId = <?php echo $listing_id; ?>;
+const transactionId = <?php echo $transaction_id; ?>;
 let checkInterval;
 let timerInterval;
-let timeLeft = <?php echo max(0, $time_left); ?>;
+let timeLeft = <?php echo $time_left; ?>;
 
 function copyCode() {
     navigator.clipboard.writeText(paymentCode);
-    showNotification('Payment code copied to clipboard!', 'success');
+    showNotification('Payment code copied!', 'success');
 }
 
 function showNotification(message, type) {
@@ -535,12 +466,11 @@ function showNotification(message, type) {
         position: fixed;
         top: 20px;
         right: 20px;
-        padding: 14px 24px;
+        padding: 12px 20px;
         background: ${type === 'success' ? '#10b981' : '#ef4444'};
         color: white;
         border-radius: 12px;
         z-index: 1000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         animation: slideIn 0.3s ease;
     `;
     notification.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> ${message}`;
@@ -554,11 +484,11 @@ function updateTimer() {
         clearInterval(checkInterval);
         document.getElementById('paymentStatus').innerHTML = `
             <div style="color: var(--danger);">
-                <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 16px; display: block;"></i>
-                <p style="font-weight: 700; font-size: 18px;">Payment Code Expired</p>
-                <p style="margin-top: 8px;">Please go back and generate a new code.</p>
-                <a href="pay_listing.php?listing_id=${listingId}" class="dashboard-link" style="margin-top: 16px;">
-                    Generate New Code
+                <i class="fas fa-exclamation-triangle" style="font-size: 32px;"></i>
+                <p style="margin-top: 8px; font-weight: 600;">Payment Code Expired</p>
+                <p>Please go back and request a new code.</p>
+                <a href="transaction.php?id=${transactionId}" class="btn btn-primary" style="margin-top: 16px; display: inline-block;">
+                    Go Back
                 </a>
             </div>
         `;
@@ -591,13 +521,14 @@ function checkPaymentStatus() {
                         <div class="checkmark">
                             <i class="fas fa-check"></i>
                         </div>
-                        <p style="font-weight: 700; font-size: 20px; margin-top: 8px;">Payment Confirmed!</p>
-                        <p style="margin-top: 8px;">Your listing is now active and visible to customers.</p>
-                        <a href="listings.php" class="dashboard-link">
-                            <i class="fas fa-box"></i> View My Listings
-                        </a>
+                        <p style="margin-top: 8px; font-weight: 600; font-size: 18px;">Payment Confirmed!</p>
+                        <p>Your payment has been received successfully.</p>
+                        <p style="margin-top: 8px;">Redirecting to transaction page...</p>
                     </div>
                 `;
+                setTimeout(() => {
+                    window.location.href = 'transaction.php?id=' + transactionId;
+                }, 3000);
             }
         })
         .catch(error => {
