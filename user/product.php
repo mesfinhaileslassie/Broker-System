@@ -1,10 +1,9 @@
 <?php
-// user/product.php - Modern Redesigned Product Page
+// user/product.php - Complete Product Page with Rental Booking
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
-require_once '../includes/validation.php';
 
 requireLogin();
 
@@ -43,19 +42,17 @@ $remainingAmount = $listing['price'] - $depositAmount;
 
 $error = '';
 
-// Handle rental initiation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rent_now']) && !$is_seller) {
+// Handle product purchase (for non-rental items)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && !$is_seller && $listing['type'] != 'rental') {
     $buyer_id = $user_id;
     
-    // Check if transaction already exists
     $existing = $conn->query("SELECT id FROM transactions WHERE listing_id = $listing_id AND buyer_id = $buyer_id");
     if ($existing->num_rows > 0) {
         $txn = $existing->fetch_assoc();
-        header("Location: pay_rent.php?transaction_id={$txn['id']}");
+        header("Location: transaction.php?id={$txn['id']}");
         exit;
     }
     
-    // Create transaction
     $stmt = $conn->prepare("
         INSERT INTO transactions (listing_id, buyer_id, seller_id, total_amount, deposit_amount, commission_amount, remaining_balance, status, created_at) 
         VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_buyer_deposit', NOW())
@@ -67,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rent_now']) && !$is_s
         header("Location: pay_rent.php?transaction_id=$transaction_id");
         exit;
     } else {
-        $error = "Failed to process request. Please try again.";
+        $error = "Failed to create transaction. Please try again.";
     }
 }
 
@@ -83,7 +80,6 @@ foreach ($gallery_images as $img) {
     }
 }
 
-// Get additional details
 $additional = $listing['additional_details'] ? json_decode($listing['additional_details'], true) : [];
 
 $conn->close();
@@ -100,7 +96,6 @@ $conn->close();
     <style>
         :root {
             --primary: #667eea;
-            --primary-dark: #5a67d8;
             --secondary: #764ba2;
             --success: #10b981;
             --warning: #f59e0b;
@@ -114,7 +109,6 @@ $conn->close();
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
         
-        /* Header */
         .header {
             background: white;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -161,7 +155,6 @@ $conn->close();
             color: white;
         }
         
-        /* Main Container */
         .product-container {
             max-width: 1400px;
             margin: 40px auto;
@@ -171,7 +164,6 @@ $conn->close();
             gap: 32px;
         }
         
-        /* Main Content */
         .main-content {
             background: white;
             border-radius: 28px;
@@ -179,7 +171,6 @@ $conn->close();
             box-shadow: 0 4px 20px rgba(0,0,0,0.08);
         }
         
-        /* Image Gallery */
         .image-gallery {
             position: relative;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
@@ -198,20 +189,6 @@ $conn->close();
             padding: 16px;
             background: white;
             overflow-x: auto;
-        }
-        
-        .thumbnail-gallery::-webkit-scrollbar {
-            height: 4px;
-        }
-        
-        .thumbnail-gallery::-webkit-scrollbar-track {
-            background: var(--light);
-            border-radius: 10px;
-        }
-        
-        .thumbnail-gallery::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 10px;
         }
         
         .thumbnail {
@@ -243,7 +220,6 @@ $conn->close();
             z-index: 10;
         }
         
-        /* Product Info */
         .product-info {
             padding: 28px;
         }
@@ -268,7 +244,6 @@ $conn->close();
             color: var(--gray);
         }
         
-        /* Seller Card */
         .seller-card {
             background: var(--light);
             border-radius: 20px;
@@ -309,7 +284,6 @@ $conn->close();
             margin-left: 6px;
         }
         
-        /* Details Grid */
         .details-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -350,7 +324,6 @@ $conn->close();
             color: var(--dark);
         }
         
-        /* Description */
         .description {
             margin-top: 24px;
         }
@@ -370,7 +343,6 @@ $conn->close();
             font-size: 14px;
         }
         
-        /* Sidebar */
         .sidebar {
             background: white;
             border-radius: 28px;
@@ -440,11 +412,6 @@ $conn->close();
             box-shadow: 0 8px 25px rgba(102,126,234,0.4);
         }
         
-        .btn-purchase:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
         .security-badge {
             background: #e0e7ff;
             border-radius: 16px;
@@ -457,35 +424,6 @@ $conn->close();
             color: var(--primary);
         }
         
-        .share-buttons {
-            display: flex;
-            gap: 12px;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border);
-        }
-        
-        .share-btn {
-            flex: 1;
-            padding: 10px;
-            background: var(--light);
-            border: none;
-            border-radius: 40px;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            font-size: 13px;
-            color: var(--gray);
-        }
-        
-        .share-btn:hover {
-            background: var(--primary);
-            color: white;
-        }
-        
         .alert {
             padding: 14px 18px;
             border-radius: 16px;
@@ -493,12 +431,6 @@ $conn->close();
             display: flex;
             align-items: center;
             gap: 12px;
-        }
-        
-        .alert-error {
-            background: #fee2e2;
-            color: var(--danger);
-            border-left: 4px solid var(--danger);
         }
         
         .alert-info {
@@ -570,7 +502,6 @@ $conn->close();
     </header>
     
     <div class="product-container">
-        <!-- Main Content -->
         <div class="main-content">
             <div class="image-gallery">
                 <span class="type-badge">
@@ -581,9 +512,9 @@ $conn->close();
                     ?>
                 </span>
                 <?php if ($cover_image): ?>
-                    <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>" class="main-image" id="mainImage">
+                    <img src="<?php echo $cover_image; ?>" class="main-image" id="mainImage">
                 <?php else: ?>
-                    <div class="main-image" style="display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--secondary));">
+                    <div class="main-image" style="display: flex; align-items: center; justify-content: center;">
                         <i class="fas fa-image" style="font-size: 80px; color: rgba(255,255,255,0.5);"></i>
                     </div>
                 <?php endif; ?>
@@ -591,10 +522,10 @@ $conn->close();
                 <?php if (!empty($gallery_paths) || $cover_image): ?>
                 <div class="thumbnail-gallery">
                     <?php if ($cover_image): ?>
-                        <img src="<?php echo $cover_image; ?>" class="thumbnail active" onclick="changeImage(this.src, this)" alt="Main">
+                        <img src="<?php echo $cover_image; ?>" class="thumbnail active" onclick="changeImage(this.src, this)">
                     <?php endif; ?>
                     <?php foreach ($gallery_paths as $index => $img): ?>
-                        <img src="<?php echo $img; ?>" class="thumbnail" onclick="changeImage(this.src, this)" alt="Gallery <?php echo $index + 1; ?>">
+                        <img src="<?php echo $img; ?>" class="thumbnail" onclick="changeImage(this.src, this)">
                     <?php endforeach; ?>
                 </div>
                 <?php endif; ?>
@@ -605,23 +536,16 @@ $conn->close();
                 <div class="price">
                     <?php echo formatMoney($listing['price']); ?>
                     <?php if ($listing['type'] == 'rental'): ?>
-                        <small>/month</small>
+                        <small>/night</small>
                     <?php elseif ($listing['type'] == 'job'): ?>
                         <small>/month</small>
                     <?php endif; ?>
                 </div>
                 
                 <div class="seller-card">
-                    <div class="seller-avatar">
-                        <?php echo strtoupper(substr($listing['seller_name'], 0, 1)); ?>
-                    </div>
+                    <div class="seller-avatar"><?php echo strtoupper(substr($listing['seller_name'], 0, 1)); ?></div>
                     <div class="seller-details">
-                        <h4>
-                            <?php echo htmlspecialchars($listing['seller_name']); ?>
-                            <?php if ($listing['seller_verified']): ?>
-                                <i class="fas fa-check-circle verified-badge" title="Verified Seller"></i>
-                            <?php endif; ?>
-                        </h4>
+                        <h4><?php echo htmlspecialchars($listing['seller_name']); ?></h4>
                         <p><i class="fas fa-store"></i> Member since <?php echo date('Y', strtotime($listing['created_at'] ?? 'now')); ?></p>
                     </div>
                     <div style="margin-left: auto;">
@@ -637,75 +561,39 @@ $conn->close();
                         <?php if (!empty($additional['bedrooms'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-bed"></i></div>
-                            <div class="detail-info">
-                                <label>Bedrooms</label>
-                                <span><?php echo $additional['bedrooms']; ?></span>
-                            </div>
+                            <div class="detail-info"><label>Bedrooms</label><span><?php echo $additional['bedrooms']; ?></span></div>
                         </div>
                         <?php endif; ?>
                         <?php if (!empty($additional['bathrooms'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-bath"></i></div>
-                            <div class="detail-info">
-                                <label>Bathrooms</label>
-                                <span><?php echo $additional['bathrooms']; ?></span>
-                            </div>
+                            <div class="detail-info"><label>Bathrooms</label><span><?php echo $additional['bathrooms']; ?></span></div>
                         </div>
                         <?php endif; ?>
                         <?php if (!empty($additional['area'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-arrows-alt"></i></div>
-                            <div class="detail-info">
-                                <label>Area</label>
-                                <span><?php echo $additional['area']; ?> sqm</span>
-                            </div>
+                            <div class="detail-info"><label>Area</label><span><?php echo $additional['area']; ?> sqm</span></div>
                         </div>
                         <?php endif; ?>
                     <?php elseif ($listing['type'] == 'product'): ?>
                         <?php if (!empty($additional['year'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-calendar"></i></div>
-                            <div class="detail-info">
-                                <label>Year</label>
-                                <span><?php echo $additional['year']; ?></span>
-                            </div>
+                            <div class="detail-info"><label>Year</label><span><?php echo $additional['year']; ?></span></div>
                         </div>
                         <?php endif; ?>
                         <?php if (!empty($additional['mileage'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-tachometer-alt"></i></div>
-                            <div class="detail-info">
-                                <label>Mileage</label>
-                                <span><?php echo number_format($additional['mileage']); ?> km</span>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($additional['fuel_type'])): ?>
-                        <div class="detail-item">
-                            <div class="detail-icon"><i class="fas fa-gas-pump"></i></div>
-                            <div class="detail-info">
-                                <label>Fuel Type</label>
-                                <span><?php echo $additional['fuel_type']; ?></span>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($additional['transmission'])): ?>
-                        <div class="detail-item">
-                            <div class="detail-icon"><i class="fas fa-cogs"></i></div>
-                            <div class="detail-info">
-                                <label>Transmission</label>
-                                <span><?php echo $additional['transmission']; ?></span>
-                            </div>
+                            <div class="detail-info"><label>Mileage</label><span><?php echo number_format($additional['mileage']); ?> km</span></div>
                         </div>
                         <?php endif; ?>
                     <?php elseif ($listing['type'] == 'job'): ?>
                         <?php if (!empty($additional['employment_type'])): ?>
                         <div class="detail-item">
                             <div class="detail-icon"><i class="fas fa-clock"></i></div>
-                            <div class="detail-info">
-                                <label>Employment Type</label>
-                                <span><?php echo $additional['employment_type']; ?></span>
-                            </div>
+                            <div class="detail-info"><label>Employment</label><span><?php echo $additional['employment_type']; ?></span></div>
                         </div>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -713,27 +601,13 @@ $conn->close();
                     <?php if ($listing['location']): ?>
                     <div class="detail-item">
                         <div class="detail-icon"><i class="fas fa-map-marker-alt"></i></div>
-                        <div class="detail-info">
-                            <label>Location</label>
-                            <span><?php echo htmlspecialchars($listing['location']); ?></span>
-                        </div>
+                        <div class="detail-info"><label>Location</label><span><?php echo htmlspecialchars($listing['location']); ?></span></div>
                     </div>
                     <?php endif; ?>
                     
                     <div class="detail-item">
                         <div class="detail-icon"><i class="fas fa-eye"></i></div>
-                        <div class="detail-info">
-                            <label>Views</label>
-                            <span><?php echo number_format($listing['views']); ?></span>
-                        </div>
-                    </div>
-                    
-                    <div class="detail-item">
-                        <div class="detail-icon"><i class="fas fa-calendar-alt"></i></div>
-                        <div class="detail-info">
-                            <label>Posted</label>
-                            <span><?php echo date('M d, Y', strtotime($listing['created_at'])); ?></span>
-                        </div>
+                        <div class="detail-info"><label>Views</label><span><?php echo number_format($listing['views']); ?></span></div>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -742,31 +616,17 @@ $conn->close();
                     <h3><i class="fas fa-align-left"></i> Description</h3>
                     <p><?php echo nl2br(htmlspecialchars($listing['description'])); ?></p>
                 </div>
-                
-                <?php if ($listing['type'] == 'job' && !empty($additional['requirements'])): ?>
-                <div class="description" style="margin-top: 20px;">
-                    <h3><i class="fas fa-clipboard-list"></i> Requirements</h3>
-                    <p><?php echo nl2br(htmlspecialchars($additional['requirements'])); ?></p>
-                </div>
-                <?php endif; ?>
             </div>
         </div>
         
-        <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-title">
-                <i class="fas fa-shopping-cart"></i> Booking Summary
+                <i class="fas fa-tag"></i> Pricing Summary
             </div>
-            
-            <?php if ($error): ?>
-                <div class="alert alert-error">
-                    <i class="fas fa-exclamation-triangle"></i> <?php echo $error; ?>
-                </div>
-            <?php endif; ?>
             
             <div class="payment-breakdown">
                 <div class="breakdown-item">
-                    <span><?php echo ($listing['type'] == 'rental') ? 'Monthly Rent' : (($listing['type'] == 'job') ? 'Monthly Salary' : 'Total Price'); ?></span>
+                    <span><?php echo ($listing['type'] == 'rental') ? 'Price per night' : (($listing['type'] == 'job') ? 'Monthly Salary' : 'Total Price'); ?></span>
                     <span><?php echo formatMoney($listing['price']); ?></span>
                 </div>
                 <div class="breakdown-item">
@@ -781,31 +641,44 @@ $conn->close();
                     <span>Total to Pay Now</span>
                     <span><?php echo formatMoney($totalPayment); ?></span>
                 </div>
+                <?php if ($listing['type'] == 'rental'): ?>
                 <div class="breakdown-item">
-                    <span>Remaining (pay at move-in)</span>
+                    <span>Remaining (pay at check-in)</span>
                     <span><?php echo formatMoney($remainingAmount); ?></span>
                 </div>
+                <?php endif; ?>
             </div>
             
             <?php if ($is_seller): ?>
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle"></i>
-                    <div>This is your listing. You cannot rent your own property.</div>
+                    <div>This is your <?php echo $listing['type']; ?>. View bookings in "My Renters".</div>
                 </div>
-                <a href="listings.php" class="btn-purchase" style="background: var(--gray); text-decoration: none;">
-                    <i class="fas fa-box"></i> Manage Your Listings
-                </a>
+                <?php if ($listing['type'] == 'rental'): ?>
+                    <a href="owner_bookings.php" class="btn-purchase" style="background: var(--primary); text-decoration: none;">
+                        <i class="fas fa-users"></i> View My Renters
+                    </a>
+                <?php else: ?>
+                    <a href="listings.php" class="btn-purchase" style="background: var(--gray); text-decoration: none;">
+                        <i class="fas fa-box"></i> Manage My Listings
+                    </a>
+                <?php endif; ?>
             <?php else: ?>
-                <form method="POST" id="rentForm">
-                    <input type="hidden" name="rent_now" value="1">
-                    <button type="submit" class="btn-purchase" id="rentBtn">
-                        <i class="fas fa-hand-holding-usd"></i> Rent Now - Pay Deposit
-                    </button>
-                </form>
-                <p style="font-size: 11px; color: var(--gray); text-align: center; margin-top: 12px;">
-                    <i class="fas fa-shield-alt"></i> Your deposit is held securely in escrow.<br>
-                    Full refund if the property is not as described.
-                </p>
+                <?php if ($listing['type'] == 'rental'): ?>
+                    <a href="rental_booking.php?id=<?php echo $listing['id']; ?>" class="btn-purchase">
+                        <i class="fas fa-calendar-check"></i> Book Now
+                    </a>
+                    <p style="font-size: 11px; color: var(--gray); text-align: center; margin-top: 12px;">
+                        <i class="fas fa-shield-alt"></i> Pay deposit to secure your booking
+                    </p>
+                <?php else: ?>
+                    <form method="POST">
+                        <input type="hidden" name="purchase" value="1">
+                        <button type="submit" class="btn-purchase">
+                            <i class="fas fa-shopping-cart"></i> Purchase Now
+                        </button>
+                    </form>
+                <?php endif; ?>
             <?php endif; ?>
             
             <div class="security-badge">
@@ -814,18 +687,6 @@ $conn->close();
                     <strong>Secure Escrow Protection</strong><br>
                     <small>Your payment is protected until you confirm satisfaction</small>
                 </div>
-            </div>
-            
-            <div class="share-buttons">
-                <button class="share-btn" onclick="shareProduct('facebook')">
-                    <i class="fab fa-facebook-f"></i> Share
-                </button>
-                <button class="share-btn" onclick="shareProduct('twitter')">
-                    <i class="fab fa-twitter"></i> Tweet
-                </button>
-                <button class="share-btn" onclick="shareProduct('whatsapp')">
-                    <i class="fab fa-whatsapp"></i> WhatsApp
-                </button>
             </div>
         </div>
     </div>
@@ -837,38 +698,6 @@ $conn->close();
                 thumb.classList.remove('active');
             });
             element.classList.add('active');
-        }
-        
-        const rentForm = document.getElementById('rentForm');
-        const rentBtn = document.getElementById('rentBtn');
-        
-        if (rentForm) {
-            rentForm.addEventListener('submit', function(e) {
-                rentBtn.disabled = true;
-                rentBtn.innerHTML = '<div class="loading"></div> Processing...';
-            });
-        }
-        
-        function shareProduct(platform) {
-            const url = encodeURIComponent(window.location.href);
-            const text = encodeURIComponent('Check out this property on Ethio Brokerplace:');
-            
-            let shareUrl = '';
-            switch(platform) {
-                case 'facebook':
-                    shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${url}`;
-                    break;
-                case 'twitter':
-                    shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${url}`;
-                    break;
-                case 'whatsapp':
-                    shareUrl = `https://wa.me/?text=${text}%20${url}`;
-                    break;
-            }
-            
-            if (shareUrl) {
-                window.open(shareUrl, '_blank', 'width=600,height=400');
-            }
         }
         
         document.querySelectorAll('img').forEach(img => {
