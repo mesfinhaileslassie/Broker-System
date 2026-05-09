@@ -419,6 +419,29 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-exchange-alt"></i>
                 <span class="menu-label">Transactions</span>
             </a>
+
+
+            <!-- Add to admin/layout.php sidebar -->
+<a href="withdrawal_approval.php" class="menu-item">
+    <i class="fas fa-money-bill-wave"></i>
+    <span class="menu-label">Withdrawals</span>
+    <?php 
+    $pending_count = $conn->query("SELECT COUNT(*) as count FROM withdrawal_requests WHERE status = 'pending'")->fetch_assoc()['count'];
+    if ($pending_count > 0): ?>
+        <span class="badge-count"><?php echo $pending_count; ?></span>
+    <?php endif; ?>
+</a>
+
+        <a href="dispute_resolution.php" class="menu-item">
+            <i class="fas fa-gavel"></i>
+            <span class="menu-label">Disputes</span>
+        </a>
+
+        <!-- Add to user/layout.php sidebar -->
+        <a href="withdrawal_request.php" class="menu-item">
+            <i class="fas fa-money-bill-wave"></i>
+            <span class="menu-label">Withdraw</span>
+        </a>
             
             <!-- Legal Process -->
             <a href="/broker_system/user/legal_process.php" class="menu-item <?php echo $current_page == 'legal_process.php' ? 'active' : ''; ?>">
