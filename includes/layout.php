@@ -1,5 +1,5 @@
 <?php
-// includes/layout.php - Complete Layout with My Renters Button
+// includes/layout.php - Complete Layout with Negotiations Menu
 
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
@@ -50,6 +50,13 @@ $legal_result = $conn->query("
          (t.seller_legal_confirmed = 0 AND t.seller_id = $user_id))
 ");
 $pending_legal_count = ($legal_result && $legal_result->num_rows > 0) ? $legal_result->fetch_assoc()['count'] : 0;
+
+// Get pending negotiations count
+$pending_negotiations = $conn->query("
+    SELECT COUNT(*) as count FROM listing_negotiations 
+    WHERE seller_id = $user_id AND status IN ('under_review', 'commission_proposed', 'counter_offer_sent')
+");
+$pending_negotiations_count = ($pending_negotiations && $pending_negotiations->num_rows > 0) ? $pending_negotiations->fetch_assoc()['count'] : 0;
 
 // Get recent notifications for dropdown
 $recent_notifications = $conn->query("
@@ -412,7 +419,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             position: absolute;
             top: 100%;
             right: 0;
-            width: 200px;
+            width: 220px;
             background: white;
             border-radius: 12px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.1);
@@ -500,7 +507,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <span class="menu-label">My Listings</span>
             </a>
             
-            <!-- MY RENTERS - NEW BUTTON WITH BADGE -->
+            <!-- NEGOTIATIONS - NEW MENU ITEM -->
+            <a href="/broker_system/user/negotiations.php" class="menu-item <?php echo $current_page == 'negotiations.php' ? 'active' : ''; ?>">
+                <i class="fas fa-handshake"></i>
+                <span class="menu-label">Negotiations</span>
+                <?php if ($pending_negotiations_count > 0): ?>
+                    <span class="badge-count"><?php echo $pending_negotiations_count; ?></span>
+                <?php endif; ?>
+            </a>
+            
+            <!-- MY RENTERS -->
             <a href="/broker_system/user/owner_bookings.php" class="menu-item <?php echo $current_page == 'owner_bookings.php' ? 'active' : ''; ?>">
                 <i class="fas fa-users"></i>
                 <span class="menu-label">My Renters</span>
@@ -617,6 +633,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                         <a href="/broker_system/user/profile.php" class="user-menu-item"><i class="fas fa-user"></i> Profile</a>
                         <a href="/broker_system/user/wallet.php" class="user-menu-item"><i class="fas fa-wallet"></i> Wallet</a>
                         <a href="/broker_system/user/notifications.php" class="user-menu-item"><i class="fas fa-bell"></i> Notifications</a>
+                        <a href="/broker_system/user/negotiations.php" class="user-menu-item"><i class="fas fa-handshake"></i> Negotiations</a>
                         <a href="/broker_system/user/settings.php" class="user-menu-item"><i class="fas fa-cog"></i> Settings</a>
                         <hr style="margin: 8px 0; border-color: #f1f5f9;">
                         <a href="/broker_system/user/owner_bookings.php" class="user-menu-item"><i class="fas fa-users"></i> My Renters</a>
