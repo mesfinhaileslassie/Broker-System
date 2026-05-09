@@ -1,5 +1,5 @@
 <?php
-// user/pay_listing.php - Beautiful Seller Payment Page
+// user/pay_listing.php - Seller pays to activate listing (Already correct)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -46,6 +46,7 @@ $existing_payment = $conn->query("
 ");
 
 if ($existing_payment->num_rows > 0) {
+    // Already paid - activate listing
     $conn->query("UPDATE listings SET status = 'active' WHERE id = $listing_id");
     header("Location: listings.php?msg=activated");
     exit;
@@ -93,6 +94,49 @@ if ($payment_code_data) {
     ");
     $stmt->bind_param("siids", $payment_code, $transaction_id, $total_payment, $user_id, $expires_at);
     $stmt->execute();
+}
+
+// Handle payment confirmation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_payment'])) {
+    $entered_code = isset($_POST['payment_code']) ? htmlspecialchars(trim($_POST['payment_code'])) : '';
+    $pin = isset($_POST['pin']) ? htmlspecialchars(trim($_POST['pin'])) : '';
+    
+    if ($entered_code !== $payment_code) {
+        $error = "Invalid payment code";
+    } elseif ($pin !== '1234') {
+        $error = "Invalid PIN. Use 1234 for testing";
+    } else {
+        $conn->begin_transaction();
+        
+        try {
+            // Mark payment code as used
+            $conn->query("UPDATE payment_codes SET status = 'used' WHERE code = '$payment_code'");
+            
+            // Record payment
+            $stmt = $conn->prepare("
+                INSERT INTO payments (transaction_id, user_id, amount, type, telebirr_code_5digit, status, confirmed_at) 
+                VALUES (?, ?, ?, 'deposit_seller', ?, 'confirmed', NOW())
+            ");
+            $stmt->bind_param("iids", $transaction_id, $user_id, $total_payment, $payment_code);
+            $stmt->execute();
+            
+            // Update escrow
+            $conn->query("UPDATE transactions SET escrow_held = escrow_held + $total_payment WHERE id = $transaction_id");
+            
+            // CRITICAL: Activate the listing (make it visible in browse)
+            $conn->query("UPDATE listings SET status = 'active' WHERE id = $listing_id");
+            
+            $conn->commit();
+            
+            $success = true;
+            header("Refresh: 2; URL=listings.php?activated=1");
+            exit;
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            $error = "Payment failed: " . $e->getMessage();
+        }
+    }
 }
 
 $conn->close();

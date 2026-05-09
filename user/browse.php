@@ -1,13 +1,9 @@
 <?php
-// user/browse.php - Complete Browse with Validation
+// user/browse.php - Only shows ACTIVE listings (paid listings)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
-require_once '../includes/validation.php';
-
-// Optional login - users can browse without logging in
-// requireLogin(); // Comment this out to allow public browsing
 
 $page_title = 'Browse Listings';
 ob_start();
@@ -15,13 +11,13 @@ ob_start();
 $conn = getDbConnection();
 
 // Get and sanitize filter parameters
-$type = sanitizeString($_GET['type'] ?? '');
-$search = sanitizeString($_GET['search'] ?? '');
-$min_price = sanitizeFloat($_GET['min_price'] ?? 0);
-$max_price = sanitizeFloat($_GET['max_price'] ?? 0);
-$location = sanitizeString($_GET['location'] ?? '');
-$page = sanitizeInt($_GET['page'] ?? 1);
-$sort = sanitizeString($_GET['sort'] ?? 'newest');
+$type = isset($_GET['type']) ? htmlspecialchars(trim($_GET['type']), ENT_QUOTES, 'UTF-8') : '';
+$search = isset($_GET['search']) ? htmlspecialchars(trim($_GET['search']), ENT_QUOTES, 'UTF-8') : '';
+$min_price = isset($_GET['min_price']) ? floatval($_GET['min_price']) : 0;
+$max_price = isset($_GET['max_price']) ? floatval($_GET['max_price']) : 0;
+$location = isset($_GET['location']) ? htmlspecialchars(trim($_GET['location']), ENT_QUOTES, 'UTF-8') : '';
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$sort = isset($_GET['sort']) ? htmlspecialchars(trim($_GET['sort']), ENT_QUOTES, 'UTF-8') : 'newest';
 
 // Validate parameters
 $valid_types = ['', 'product', 'job', 'rental'];
@@ -36,15 +32,18 @@ if (!in_array($sort, $valid_sorts)) {
 
 if ($page < 1) $page = 1;
 if ($page > 100) $page = 100;
-
 if ($min_price < 0) $min_price = 0;
 if ($max_price < 0) $max_price = 0;
 
 $limit = 12;
 $offset = ($page - 1) * $limit;
 
-// Build query
-$where = ["l.status = 'active'", "l.approval_status = 'approved'"];
+// IMPORTANT: Only show ACTIVE listings (status = 'active')
+// This means the seller has paid the deposit + commission
+$where = [
+    "l.status = 'active'", 
+    "l.approval_status = 'approved'"
+];
 $params = [];
 $types_param = "";
 
@@ -84,12 +83,19 @@ if ($location) {
 $whereClause = "WHERE " . implode(" AND ", $where);
 
 // Sorting
-$orderBy = match($sort) {
-    'price_low' => "l.price ASC",
-    'price_high' => "l.price DESC",
-    'popular' => "l.views DESC",
-    default => "l.created_at DESC"
-};
+switch ($sort) {
+    case 'price_low':
+        $orderBy = "l.price ASC";
+        break;
+    case 'price_high':
+        $orderBy = "l.price DESC";
+        break;
+    case 'popular':
+        $orderBy = "l.views DESC";
+        break;
+    default:
+        $orderBy = "l.created_at DESC";
+}
 
 // Get total count
 $countSql = "SELECT COUNT(*) as total FROM listings l $whereClause";
@@ -150,19 +156,19 @@ $conn->close();
     .card-type { display: inline-block; padding: 4px 12px; background: #f1f5f9; border-radius: 20px; font-size: 11px; font-weight: 600; margin-bottom: 10px; }
     .card-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #0f172a; line-height: 1.4; }
     .card-price { font-size: 20px; font-weight: 800; color: #667eea; margin: 10px 0; }
+    .card-price small { font-size: 12px; font-weight: normal; }
     .card-location { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; margin-top: 8px; }
     .card-seller { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
     .stats { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: #94a3b8; }
     
     .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
-    .pagination a, .pagination span { padding: 8px 14px; background: white; border-radius: 10px; text-decoration: none; color: #334155; font-size: 14px; transition: all 0.3s; }
-    .pagination a:hover, .pagination .active { background: #667eea; color: white; }
+    .pagination a, .pagination span { padding: 8px 14px; background: white; border-radius: 10px; text-decoration: none; color: #334155; font-size: 14px; transition: all 0.3s; border: 1px solid #e2e8f0; }
+    .pagination a:hover, .pagination .active { background: #667eea; color: white; border-color: #667eea; }
     .pagination .disabled { opacity: 0.5; cursor: not-allowed; }
     
     .empty-state { text-align: center; padding: 60px; background: white; border-radius: 24px; }
     .empty-state i { font-size: 64px; color: #cbd5e1; margin-bottom: 16px; display: block; }
     
-    .sort-select { padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 13px; background: white; }
     .result-count { font-size: 13px; color: #64748b; margin-bottom: 16px; }
     
     @media (max-width: 768px) {
@@ -266,14 +272,14 @@ $conn->close();
                 </div>
                 <div class="card-content">
                     <span class="card-type">
-                        <?php if ($item['type'] == 'rental'): ?>🏡 Property
-                        <?php elseif ($item['type'] == 'product'): ?>🚗 Car
+                        <?php if ($item['type'] == 'rental'): ?>🏡 For Rent
+                        <?php elseif ($item['type'] == 'product'): ?>🚗 For Sale
                         <?php else: ?>💼 Job<?php endif; ?>
                     </span>
                     <div class="card-title"><?php echo htmlspecialchars(substr($item['title'], 0, 50)); ?></div>
                     <div class="card-price"><?php echo formatMoney($item['price']); ?>
-                        <?php if ($item['type'] == 'rental'): ?><span style="font-size: 12px;">/month</span><?php endif; ?>
-                        <?php if ($item['type'] == 'job'): ?><span style="font-size: 12px;">/month</span><?php endif; ?>
+                        <?php if ($item['type'] == 'rental'): ?><small>/month</small><?php endif; ?>
+                        <?php if ($item['type'] == 'job'): ?><small>/month</small><?php endif; ?>
                     </div>
                     
                     <?php if ($item['type'] == 'rental' && !empty($additional)): ?>

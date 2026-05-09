@@ -6,6 +6,13 @@ ob_start();
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/auth.php';
+
+// Check if logged in and is admin
+if (!isLoggedIn() || $_SESSION['user_role'] != 'admin') {
+    header('Location: /broker_system/auth/login.php');
+    exit;
+}
 
 $conn = getDbConnection();
 $message = '';
@@ -18,11 +25,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deposit_percent = intval($_POST['deposit_percent']);
         $commission_percent = intval($_POST['commission_percent']);
         
-        $update = $conn->prepare("UPDATE listings SET approval_status = 'approved', admin_deposit_percent = ?, admin_commission_percent = ?, approved_at = NOW() WHERE id = ?");
+        // Only set approval_status to 'approved', status remains 'pending' until seller pays
+        $update = $conn->prepare("
+            UPDATE listings 
+            SET approval_status = 'approved', 
+                admin_deposit_percent = ?, 
+                admin_commission_percent = ?, 
+                approved_at = NOW() 
+            WHERE id = ?
+        ");
         $update->bind_param("iii", $deposit_percent, $commission_percent, $listing_id);
         
         if ($update->execute()) {
-            $message = "Listing approved successfully";
+            $message = "Listing approved successfully. Seller must now pay deposit to activate.";
         } else {
             $error = "Failed to approve listing";
         }
@@ -356,7 +371,7 @@ $conn->close();
     </div>
     <div class="stat-card approved">
         <div class="stat-value"><?php echo $stats['approved']; ?></div>
-        <div class="stat-label">Approved</div>
+        <div class="stat-label">Approved (Need Payment)</div>
     </div>
     <div class="stat-card rejected">
         <div class="stat-value"><?php echo $stats['rejected']; ?></div>
@@ -402,7 +417,6 @@ $conn->close();
                 <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
             </div>
             
-            <!-- Display Cover Image -->
             <?php if ($cover_image && file_exists(str_replace('/broker_system/', '', $cover_image))): ?>
                 <div class="listing-image">
                     <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($listing['title']); ?>">
@@ -427,7 +441,6 @@ $conn->close();
                 </div>
             </div>
             
-            <!-- Additional Details based on type -->
             <?php if (!empty($additional)): ?>
                 <div class="additional-details">
                     <strong><i class="fas fa-info-circle"></i> Additional Details:</strong><br>
@@ -461,17 +474,17 @@ $conn->close();
                     <div class="form-group">
                         <label>Deposit Percentage (%)</label>
                         <input type="number" name="deposit_percent" required min="0" max="100" value="30" step="1">
-                        <div class="info-text">Buyer and seller must deposit this percentage</div>
+                        <div class="info-text">Seller must pay this percentage to activate</div>
                     </div>
                     <div class="form-group">
                         <label>Commission Percentage (%)</label>
                         <input type="number" name="commission_percent" required min="0" max="100" value="15" step="1">
-                        <div class="info-text">System commission from this transaction</div>
+                        <div class="info-text">Platform commission from transaction</div>
                     </div>
                 </div>
                 
                 <div class="btn-group">
-                    <button type="submit" name="approve_listing" class="btn btn-approve" onclick="return confirm('Approve this listing? The seller will be notified to pay deposit and commission.')">
+                    <button type="submit" name="approve_listing" class="btn btn-approve" onclick="return confirm('Approve this listing? The seller must pay deposit to activate.')">
                         <i class="fas fa-check"></i> Approve Listing
                     </button>
                     <button type="button" class="btn btn-reject" onclick="toggleRejectForm(<?php echo $listing['id']; ?>)">
@@ -490,6 +503,10 @@ $conn->close();
                     </button>
                 </div>
             </form>
+            
+            <div class="info-text" style="margin-top: 16px; text-align: center; background: #fef3c7; padding: 8px; border-radius: 8px;">
+                <i class="fas fa-info-circle"></i> After approval, seller must pay <?php echo $deposit_percent; ?>% deposit + <?php echo $commission_percent; ?>% commission to activate.
+            </div>
         </div>
     <?php endwhile; ?>
 <?php else: ?>
@@ -497,6 +514,9 @@ $conn->close();
         <i class="fas fa-check-circle"></i>
         <h3>No Pending Approvals</h3>
         <p>All listings have been reviewed. Check back later for new submissions.</p>
+        <a href="dashboard.php" class="btn btn-approve" style="display: inline-block; margin-top: 16px; text-decoration: none;">
+            <i class="fas fa-home"></i> Back to Dashboard
+        </a>
     </div>
 <?php endif; ?>
 

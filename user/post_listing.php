@@ -1,11 +1,10 @@
 <?php
-// user/post_listing.php - Complete with Validation
+// user/post_listing.php - Completely Fixed Version
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/upload.php';
-require_once '../includes/validation.php';
 
 requireLogin();
 
@@ -15,7 +14,6 @@ ob_start();
 $conn = getDbConnection();
 $error = '';
 $success = '';
-$form_data = [];
 
 // Get categories
 $categories = $conn->query("SELECT * FROM categories WHERE is_active = 1 ORDER BY type, name");
@@ -27,208 +25,153 @@ if (!file_exists($upload_dir)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitize all inputs
-    $form_data = [
-        'type' => sanitizeString($_POST['type'] ?? ''),
-        'title' => sanitizeString($_POST['title'] ?? ''),
-        'description' => sanitizeString($_POST['description'] ?? ''),
-        'price' => sanitizeFloat($_POST['price'] ?? 0),
-        'category_id' => sanitizeInt($_POST['category_id'] ?? 0),
-        'location' => sanitizeString($_POST['location'] ?? ''),
-        // Rental fields
-        'bedrooms' => sanitizeInt($_POST['bedrooms'] ?? 0),
-        'bathrooms' => sanitizeInt($_POST['bathrooms'] ?? 0),
-        'area' => sanitizeFloat($_POST['area'] ?? 0),
-        // Car fields
-        'year' => sanitizeInt($_POST['year'] ?? 0),
-        'mileage' => sanitizeInt($_POST['mileage'] ?? 0),
-        'fuel_type' => sanitizeString($_POST['fuel_type'] ?? ''),
-        'transmission' => sanitizeString($_POST['transmission'] ?? ''),
-        // Job fields
-        'employment_type' => sanitizeString($_POST['employment_type'] ?? ''),
-        'requirements' => sanitizeString($_POST['requirements'] ?? '')
-    ];
+    // Get and sanitize inputs
+    $type = isset($_POST['type']) ? htmlspecialchars(trim($_POST['type']), ENT_QUOTES, 'UTF-8') : '';
+    $title = isset($_POST['title']) ? htmlspecialchars(trim($_POST['title']), ENT_QUOTES, 'UTF-8') : '';
+    $description = isset($_POST['description']) ? htmlspecialchars(trim($_POST['description']), ENT_QUOTES, 'UTF-8') : '';
+    $price = isset($_POST['price']) ? floatval($_POST['price']) : 0;
+    $category_id = isset($_POST['category_id']) ? intval($_POST['category_id']) : 0;
+    $location = isset($_POST['location']) ? htmlspecialchars(trim($_POST['location']), ENT_QUOTES, 'UTF-8') : '';
+    
+    // Rental fields
+    $bedrooms = isset($_POST['bedrooms']) ? intval($_POST['bedrooms']) : 0;
+    $bathrooms = isset($_POST['bathrooms']) ? intval($_POST['bathrooms']) : 0;
+    $area = isset($_POST['area']) ? floatval($_POST['area']) : 0;
+    
+    // Car fields
+    $year = isset($_POST['year']) ? intval($_POST['year']) : 0;
+    $mileage = isset($_POST['mileage']) ? intval($_POST['mileage']) : 0;
+    $fuel_type = isset($_POST['fuel_type']) ? htmlspecialchars(trim($_POST['fuel_type']), ENT_QUOTES, 'UTF-8') : '';
+    $transmission = isset($_POST['transmission']) ? htmlspecialchars(trim($_POST['transmission']), ENT_QUOTES, 'UTF-8') : '';
+    
+    // Job fields
+    $employment_type = isset($_POST['employment_type']) ? htmlspecialchars(trim($_POST['employment_type']), ENT_QUOTES, 'UTF-8') : '';
+    $requirements = isset($_POST['requirements']) ? htmlspecialchars(trim($_POST['requirements']), ENT_QUOTES, 'UTF-8') : '';
     
     $errors = [];
     
-    // ============================================
-    // VALIDATION RULES
-    // ============================================
-    
-    // Listing type validation
-    if (!validateListingType($form_data['type'])) {
+    // Validation
+    $valid_types = ['product', 'job', 'rental'];
+    if (!in_array($type, $valid_types)) {
         $errors[] = "Invalid listing type selected";
     }
     
-    // Title validation
-    if (empty($form_data['title'])) {
+    if (empty($title)) {
         $errors[] = "Title is required";
-    } elseif (!validateLength($form_data['title'], 3, 100)) {
-        $errors[] = "Title must be between 3 and 100 characters";
-    } elseif (!validateAlphaNumeric($form_data['title'], true)) {
-        $errors[] = "Title can only contain letters, numbers, and spaces";
+    } elseif (strlen($title) < 3) {
+        $errors[] = "Title must be at least 3 characters";
+    } elseif (strlen($title) > 100) {
+        $errors[] = "Title must not exceed 100 characters";
     }
     
-    // Description validation
-    if (empty($form_data['description'])) {
+    if (empty($description)) {
         $errors[] = "Description is required";
-    } elseif (!validateLength($form_data['description'], 20, 5000)) {
-        $errors[] = "Description must be between 20 and 5000 characters";
+    } elseif (strlen($description) < 20) {
+        $errors[] = "Description must be at least 20 characters";
+    } elseif (strlen($description) > 5000) {
+        $errors[] = "Description must not exceed 5000 characters";
     }
     
-    // Price validation
-    if ($form_data['price'] <= 0) {
+    if ($price <= 0) {
         $errors[] = "Please enter a valid price greater than 0";
-    } elseif (!validateAmount($form_data['price'])) {
-        $errors[] = "Please enter a valid price (max 2 decimal places)";
-    } elseif ($form_data['price'] > 100000000) {
+    } elseif ($price > 100000000) {
         $errors[] = "Price cannot exceed 100,000,000 ETB";
     }
     
-    // Category validation
-    if ($form_data['category_id'] <= 0) {
+    if ($category_id <= 0) {
         $errors[] = "Please select a category";
     }
     
-    // Location validation
-    if (!empty($form_data['location']) && !validateLength($form_data['location'], 2, 200)) {
-        $errors[] = "Location must be between 2 and 200 characters";
+    if ($type == 'rental') {
+        if ($bedrooms < 0 || $bedrooms > 50) $errors[] = "Bedrooms must be between 0 and 50";
+        if ($bathrooms < 0 || $bathrooms > 50) $errors[] = "Bathrooms must be between 0 and 50";
+        if ($area < 0 || $area > 10000) $errors[] = "Area must be between 0 and 10,000 sqm";
     }
     
-    // Type-specific validations
-    if ($form_data['type'] == 'rental') {
-        if ($form_data['bedrooms'] < 0 || $form_data['bedrooms'] > 50) {
-            $errors[] = "Bedrooms must be between 0 and 50";
-        }
-        if ($form_data['bathrooms'] < 0 || $form_data['bathrooms'] > 50) {
-            $errors[] = "Bathrooms must be between 0 and 50";
-        }
-        if ($form_data['area'] < 0 || $form_data['area'] > 10000) {
-            $errors[] = "Area must be between 0 and 10,000 sqm";
-        }
-    }
-    
-    if ($form_data['type'] == 'product') {
-        if ($form_data['year'] < 1950 || $form_data['year'] > date('Y') + 1) {
-            $errors[] = "Please enter a valid year between 1950 and " . (date('Y') + 1);
-        }
-        if ($form_data['mileage'] < 0 || $form_data['mileage'] > 1000000) {
-            $errors[] = "Mileage must be between 0 and 1,000,000 km";
-        }
+    if ($type == 'product') {
+        $current_year = date('Y');
+        if ($year < 1950 || $year > $current_year + 1) $errors[] = "Please enter a valid year between 1950 and " . ($current_year + 1);
+        if ($mileage < 0 || $mileage > 1000000) $errors[] = "Mileage must be between 0 and 1,000,000 km";
         $valid_fuel = ['Petrol', 'Diesel', 'Electric', 'Hybrid'];
-        if (!empty($form_data['fuel_type']) && !in_array($form_data['fuel_type'], $valid_fuel)) {
-            $errors[] = "Please select a valid fuel type";
-        }
+        if (!empty($fuel_type) && !in_array($fuel_type, $valid_fuel)) $errors[] = "Please select a valid fuel type";
         $valid_transmission = ['Manual', 'Automatic', 'Semi-Automatic'];
-        if (!empty($form_data['transmission']) && !in_array($form_data['transmission'], $valid_transmission)) {
-            $errors[] = "Please select a valid transmission type";
-        }
+        if (!empty($transmission) && !in_array($transmission, $valid_transmission)) $errors[] = "Please select a valid transmission type";
     }
     
-    if ($form_data['type'] == 'job') {
+    if ($type == 'job') {
         $valid_employment = ['Full-time', 'Part-time', 'Contract', 'Remote', 'Internship'];
-        if (!empty($form_data['employment_type']) && !in_array($form_data['employment_type'], $valid_employment)) {
-            $errors[] = "Please select a valid employment type";
-        }
-        if (!empty($form_data['requirements']) && !validateLength($form_data['requirements'], 10, 2000)) {
-            $errors[] = "Requirements must be between 10 and 2000 characters";
-        }
+        if (!empty($employment_type) && !in_array($employment_type, $valid_employment)) $errors[] = "Please select a valid employment type";
+        if (!empty($requirements) && (strlen($requirements) < 10 || strlen($requirements) > 2000)) $errors[] = "Requirements must be between 10 and 2000 characters";
     }
     
-    // File upload validation
+    // File upload
     $cover_image = '';
     if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-        $file_errors = validateFileUpload($_FILES['cover_image']);
-        if (!empty($file_errors)) {
-            $errors = array_merge($errors, $file_errors);
+        $upload = uploadImage($_FILES['cover_image'], $upload_dir);
+        if ($upload['success']) {
+            $cover_image = $upload['filename'];
+        } else {
+            $errors[] = $upload['error'];
         }
     } else {
         $errors[] = "Cover image is required";
     }
     
-    // Process if no errors
     if (empty($errors)) {
-        // Upload cover image
-        if (isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-            $upload = uploadImage($_FILES['cover_image'], $upload_dir);
-            if ($upload['success']) {
-                $cover_image = $upload['filename'];
-            } else {
-                $errors[] = $upload['error'];
-            }
-        }
-        
-        // Upload gallery images
-        $gallery_images = [];
-        if (isset($_FILES['gallery_images'])) {
-            foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
-                if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
-                    $file = [
-                        'name' => $_FILES['gallery_images']['name'][$key],
-                        'tmp_name' => $_FILES['gallery_images']['tmp_name'][$key],
-                        'size' => $_FILES['gallery_images']['size'][$key],
-                        'error' => $_FILES['gallery_images']['error'][$key]
-                    ];
-                    $file_errors = validateFileUpload($file);
-                    if (empty($file_errors)) {
-                        $upload = uploadImage($file, $upload_dir);
-                        if ($upload['success']) {
-                            $gallery_images[] = $upload['filename'];
-                        }
-                    }
-                }
-            }
-        }
-        
-        $gallery_json = !empty($gallery_images) ? json_encode($gallery_images) : null;
-        
         // Build additional details JSON
-        $additional_details = [];
-        if ($form_data['type'] == 'rental') {
-            $additional_details = [
-                'bedrooms' => $form_data['bedrooms'],
-                'bathrooms' => $form_data['bathrooms'],
-                'area' => $form_data['area']
-            ];
-        } elseif ($form_data['type'] == 'product') {
-            $additional_details = [
-                'year' => $form_data['year'],
-                'mileage' => $form_data['mileage'],
-                'fuel_type' => $form_data['fuel_type'],
-                'transmission' => $form_data['transmission']
-            ];
-        } elseif ($form_data['type'] == 'job') {
-            $additional_details = [
-                'employment_type' => $form_data['employment_type'],
-                'requirements' => $form_data['requirements']
-            ];
+        $additional_json = null;
+        if ($type == 'rental') {
+            $additional_json = json_encode([
+                'bedrooms' => $bedrooms,
+                'bathrooms' => $bathrooms,
+                'area' => $area
+            ]);
+        } elseif ($type == 'product') {
+            $additional_json = json_encode([
+                'year' => $year,
+                'mileage' => $mileage,
+                'fuel_type' => $fuel_type,
+                'transmission' => $transmission
+            ]);
+        } elseif ($type == 'job') {
+            $additional_json = json_encode([
+                'employment_type' => $employment_type,
+                'requirements' => $requirements
+            ]);
         }
         
-        $additional_json = !empty($additional_details) ? json_encode($additional_details) : null;
         $user_id = $_SESSION['user_id'];
         
-        // Insert listing
-        $stmt = $conn->prepare("
-            INSERT INTO listings (seller_id, type, title, description, price, category_id, location, cover_image, gallery_images, additional_details, approval_status, status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending')
-        ");
-        $stmt->bind_param("isssdissss", 
-            $user_id, 
-            $form_data['type'], 
-            $form_data['title'], 
-            $form_data['description'], 
-            $form_data['price'], 
-            $form_data['category_id'], 
-            $form_data['location'], 
-            $cover_image, 
-            $gallery_json, 
-            $additional_json
-        );
+        // FIXED: Use a simple INSERT without bind_param issues
+        // Escape strings for safe insertion
+        $type_escaped = $conn->real_escape_string($type);
+        $title_escaped = $conn->real_escape_string($title);
+        $description_escaped = $conn->real_escape_string($description);
+        $location_escaped = $conn->real_escape_string($location);
+        $additional_escaped = $additional_json ? $conn->real_escape_string($additional_json) : null;
         
-        if ($stmt->execute()) {
+        $sql = "INSERT INTO listings (
+            seller_id, type, title, description, price, category_id, location, 
+            cover_image, additional_details, approval_status, status, created_at
+        ) VALUES (
+            $user_id, 
+            '$type_escaped', 
+            '$title_escaped', 
+            '$description_escaped', 
+            $price, 
+            $category_id, 
+            '$location_escaped', 
+            '$cover_image', 
+            " . ($additional_escaped ? "'$additional_escaped'" : "NULL") . ", 
+            'pending', 
+            'pending', 
+            NOW()
+        )";
+        
+        if ($conn->query($sql)) {
             $listing_id = $conn->insert_id;
             $success = "Listing submitted for admin approval. You will be notified once approved.";
-            header("Refresh: 3; URL=listings.php");
+            header("Refresh: 2; URL=listings.php");
         } else {
             $error = "Failed to post listing: " . $conn->error;
         }
@@ -240,7 +183,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $conn->close();
 ?>
 
-<!-- Rest of the HTML form (same as before but with error display) -->
 <style>
     .post-form { max-width: 900px; margin: 0 auto; }
     .card { background: white; border-radius: 28px; padding: 32px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.1); }
@@ -330,7 +272,7 @@ $conn->close();
             </div>
             
             <!-- Property Fields -->
-            <div id="propertyFields" class="dynamic-fields">
+            <div id="propertyFields" class="dynamic-fields active">
                 <div class="form-row-3">
                     <div class="form-group">
                         <label>Bedrooms</label>
