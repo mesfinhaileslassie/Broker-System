@@ -11,6 +11,13 @@ if (!isset($_SESSION['user_logged_in']) || !$_SESSION['user_logged_in']) {
     exit;
 }
 
+
+
+
+
+
+
+
 $code = $_GET['code'] ?? '';
 
 if (!$code) {

@@ -1,5 +1,5 @@
 <?php
-// api/confirm_payment.php - Confirm payment (no database storage)
+// api/confirm_payment.php
 
 session_start();
 header('Content-Type: application/json');
@@ -9,69 +9,182 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 require_once '../config/database.php';
 
-$input = json_decode(file_get_contents('php://input'), true);
-$code = $input['payment_code'] ?? '';
-$pin = $input['pin'] ?? '';
-
-if (empty($code)) {
-    echo json_encode(['success' => false, 'error' => 'Missing payment code']);
-    exit;
-}
-
-// Verify PIN (simple for demo)
-if ($pin != '1234') {
-    echo json_encode(['success' => false, 'error' => 'Incorrect PIN. Use 1234']);
-    exit;
-}
-
-// Check session for the code
-if (!isset($_SESSION['temp_payment']) || $_SESSION['temp_payment']['code'] !== $code) {
-    echo json_encode(['success' => false, 'error' => 'Invalid or expired payment code']);
-    exit;
-}
-
-// Check expiry
-if ($_SESSION['temp_payment']['expires_at'] < time()) {
-    unset($_SESSION['temp_payment']);
-    echo json_encode(['success' => false, 'error' => 'Payment code expired']);
-    exit;
-}
-
-$amount = $_SESSION['temp_payment']['amount'];
-$listing_id = $_SESSION['temp_payment']['listing_id'];
+// Ethiopia timezone
+date_default_timezone_set('Africa/Addis_Ababa');
 
 $conn = getDbConnection();
+$conn->query("SET time_zone = '+03:00'");
 
-// Get user from session (assuming logged in)
-$user_id = $_SESSION['user_id'] ?? 1;
+$input = json_decode(file_get_contents('php://input'), true);
 
-// Process payment - update listing or create transaction
+$code = trim($input['payment_code'] ?? '');
+$pin = trim($input['pin'] ?? '');
+
+if (empty($code)) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Payment code is required'
+    ]);
+    exit;
+}
+
+// Demo PIN
+if ($pin !== '1234') {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Incorrect PIN. Use 1234'
+    ]);
+    exit;
+}
+
+// ==========================================
+// Find payment code from database
+// ==========================================
+$stmt = $conn->prepare("
+    SELECT 
+        pc.*,
+        t.id as transaction_id,
+        t.listing_id,
+        t.seller_id
+    FROM payment_codes pc
+    JOIN transactions t 
+        ON pc.transaction_id = t.id
+    WHERE pc.code = ?
+    AND pc.type = 'deposit_seller'
+    LIMIT 1
+");
+
+$stmt->bind_param("s", $code);
+$stmt->execute();
+
+$result = $stmt->get_result();
+
+if ($result->num_rows === 0) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Invalid payment code'
+    ]);
+    exit;
+}
+
+$payment_code = $result->fetch_assoc();
+
+// ==========================================
+// Check if expired
+// ==========================================
+$expiry_check = $conn->query("
+    SELECT TIMESTAMPDIFF(SECOND, NOW(), '{$payment_code['expires_at']}') as seconds_left
+")->fetch_assoc();
+
+if ($expiry_check['seconds_left'] <= 0) {
+
+    $conn->query("
+        UPDATE payment_codes
+        SET status = 'expired'
+        WHERE id = {$payment_code['id']}
+    ");
+
+    echo json_encode([
+        'success' => false,
+        'error' => 'Payment code expired'
+    ]);
+    exit;
+}
+
+// ==========================================
+// Already used?
+// ==========================================
+if ($payment_code['status'] === 'used') {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Payment already completed'
+    ]);
+    exit;
+}
+
 $conn->begin_transaction();
 
 try {
-    // Update listing to active if it's a seller deposit
-    $conn->query("UPDATE listings SET status = 'active' WHERE id = $listing_id AND seller_id = $user_id");
-    
-    // Record payment in payments table (optional, for history)
-    $stmt = $conn->prepare("INSERT INTO payments (transaction_id, user_id, amount, type, telebirr_code_5digit, status, confirmed_at) VALUES (NULL, ?, ?, 'telebirr_payment', ?, 'confirmed', NOW())");
-    $stmt->bind_param("ids", $user_id, $amount, $code);
+
+    // ======================================
+    // Create payment record
+    // IMPORTANT: type = deposit_seller
+    // ======================================
+    $stmt = $conn->prepare("
+        INSERT INTO payments (
+            transaction_id,
+            user_id,
+            amount,
+            type,
+            telebirr_code_5digit,
+            status,
+            confirmed_at,
+            created_at
+        )
+        VALUES (
+            ?, ?, ?, 
+            'deposit_seller',
+            ?, 
+            'confirmed',
+            NOW(),
+            NOW()
+        )
+    ");
+
+    $stmt->bind_param(
+        "iids",
+        $payment_code['transaction_id'],
+        $payment_code['user_id'],
+        $payment_code['amount'],
+        $code
+    );
+
     $stmt->execute();
-    
+
+    // ======================================
+    // Mark code as used
+    // ======================================
+    $conn->query("
+        UPDATE payment_codes
+        SET status = 'used'
+        WHERE id = {$payment_code['id']}
+    ");
+
+    // ======================================
+    // Update transaction
+    // ======================================
+    $conn->query("
+        UPDATE transactions
+        SET
+            escrow_held = escrow_held + {$payment_code['amount']},
+            status = 'deposits_complete'
+        WHERE id = {$payment_code['transaction_id']}
+    ");
+
+    // ======================================
+    // Activate listing
+    // ======================================
+    $conn->query("
+        UPDATE listings
+        SET status = 'active'
+        WHERE id = {$payment_code['listing_id']}
+    ");
+
     $conn->commit();
-    
-    // Clear the session payment data
-    unset($_SESSION['temp_payment']);
-    
+
     echo json_encode([
         'success' => true,
-        'message' => 'Payment confirmed successfully',
-        'amount' => $amount
+        'message' => 'Payment confirmed successfully'
     ]);
-    
+
 } catch (Exception $e) {
+
     $conn->rollback();
-    echo json_encode(['success' => false, 'error' => 'Payment failed: ' . $e->getMessage()]);
+
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage()
+    ]);
 }
 
 $conn->close();
-?>

@@ -117,6 +117,11 @@ $conn->close();
         animation: moveBackground 40s linear infinite;
     }
     
+    @keyframes moveBackground {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(30px, 30px); }
+    }
+    
     .page-header h1 {
         position: relative;
         z-index: 1;
@@ -146,8 +151,8 @@ $conn->close();
         padding: 20px;
         text-align: center;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        border: 1px solid var(--border);
         transition: all 0.3s;
+        border: 1px solid var(--border);
     }
     
     .stat-card:hover {
@@ -405,6 +410,40 @@ $conn->close();
         color: var(--primary);
     }
     
+    /* Alert Banner for New Bookings */
+    .alert-banner {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    
+    .alert-banner i {
+        font-size: 24px;
+        color: #f59e0b;
+    }
+    
+    .alert-banner-content {
+        flex: 1;
+    }
+    
+    .alert-banner-title {
+        font-weight: 700;
+        color: #92400e;
+    }
+    
+    .alert-banner-message {
+        font-size: 12px;
+        color: #b45309;
+        margin-top: 4px;
+    }
+    
     /* Modal */
     .modal {
         display: none;
@@ -465,6 +504,23 @@ $conn->close();
         color: white;
     }
     
+    /* Refresh Button */
+    .refresh-btn {
+        background: white;
+        border: 1px solid var(--border);
+        padding: 8px 16px;
+        border-radius: 40px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.3s;
+    }
+    
+    .refresh-btn:hover {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+    
     @media (max-width: 1024px) {
         .stats-grid {
             grid-template-columns: repeat(3, 1fr);
@@ -504,7 +560,33 @@ $conn->close();
             <h1><i class="fas fa-users"></i> My Renters</h1>
             <p>Manage tenants who have booked your properties</p>
         </div>
+        <div style="position: absolute; right: 32px; top: 32px;">
+            <button class="refresh-btn" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
     </div>
+    
+    <!-- Alert for New Bookings -->
+    <?php if ($stats['pending'] > 0 || $stats['paid'] > 0): ?>
+    <div class="alert-banner">
+        <i class="fas fa-bell"></i>
+        <div class="alert-banner-content">
+            <div class="alert-banner-title">
+                <?php if ($stats['pending'] > 0 && $stats['paid'] > 0): ?>
+                    📢 You have <?php echo $stats['pending']; ?> pending booking(s) and <?php echo $stats['paid']; ?> new payment(s)!
+                <?php elseif ($stats['pending'] > 0): ?>
+                    📢 You have <?php echo $stats['pending']; ?> new pending booking request(s)!
+                <?php elseif ($stats['paid'] > 0): ?>
+                    💰 You have <?php echo $stats['paid']; ?> new deposit payment(s) received!
+                <?php endif; ?>
+            </div>
+            <div class="alert-banner-message">
+                Click on any booking to view full details and take action.
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
     
     <!-- Statistics -->
     <div class="stats-grid">
@@ -536,7 +618,14 @@ $conn->close();
                 <!-- Header with Status -->
                 <div class="booking-header">
                     <div>
-                        <span class="status-badge status-<?php echo $booking['status']; ?>">
+                        <?php
+                        $status_color = '';
+                        if ($booking['status'] == 'pending') $status_color = 'status-pending';
+                        elseif ($booking['status'] == 'confirmed') $status_color = 'status-confirmed';
+                        elseif ($booking['status'] == 'completed') $status_color = 'status-completed';
+                        else $status_color = 'status-cancelled';
+                        ?>
+                        <span class="status-badge <?php echo $status_color; ?>">
                             <i class="fas <?php 
                                 echo $booking['status'] == 'pending' ? 'fa-clock' : 
                                     ($booking['status'] == 'confirmed' ? 'fa-check-circle' : 
@@ -546,8 +635,13 @@ $conn->close();
                         </span>
                         <span class="payment-badge payment-<?php echo $booking['paid_amount'] > 0 ? 'paid' : 'pending'; ?>" style="margin-left: 8px;">
                             <i class="fas fa-credit-card"></i>
-                            <?php echo $booking['paid_amount'] > 0 ? 'Deposit Paid' : 'Awaiting Payment'; ?>
+                            <?php echo $booking['paid_amount'] > 0 ? '💰 Deposit Paid' : '⏳ Awaiting Payment'; ?>
                         </span>
+                        <?php if ($booking['paid_amount'] > 0): ?>
+                            <span class="payment-badge" style="background: #10b981; color: white; margin-left: 8px;">
+                                <i class="fas fa-check-circle"></i> Payment Confirmed
+                            </span>
+                        <?php endif; ?>
                     </div>
                     <div>
                         <i class="fas fa-calendar"></i> 
@@ -604,14 +698,14 @@ $conn->close();
                                 <div class="info-value amount-large"><?php echo formatMoney($booking['total_amount']); ?></div>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Deposit Paid</span>
-                                <div class="info-value" style="color: var(--success);">
+                                <span class="info-label">Deposit Paid (in Escrow)</span>
+                                <div class="info-value" style="color: var(--success); font-size: 18px; font-weight: 700;">
                                     <?php echo formatMoney($booking['deposit_paid']); ?>
                                 </div>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">In Escrow</span>
-                                <div class="info-value"><?php echo formatMoney($booking['escrow_held'] ?? 0); ?></div>
+                                <span class="info-label">Remaining to Collect</span>
+                                <div class="info-value"><?php echo formatMoney($booking['total_amount'] - $booking['deposit_paid']); ?></div>
                             </div>
                             <?php if ($booking['payment_date']): ?>
                             <div class="info-row">
@@ -679,9 +773,9 @@ $conn->close();
                     <!-- Action Buttons -->
                     <div class="action-buttons">
                         <button onclick="viewRenterDetails(<?php echo htmlspecialchars(json_encode($booking)); ?>)" class="btn btn-primary">
-                            <i class="fas fa-user-circle"></i> View Renter Details
+                            <i class="fas fa-user-circle"></i> View Full Details
                         </button>
-                        <?php if ($booking['status'] == 'confirmed'): ?>
+                        <?php if ($booking['status'] == 'confirmed' && $booking['paid_amount'] > 0): ?>
                             <button onclick="markAsCompleted(<?php echo $booking['id']; ?>)" class="btn btn-success">
                                 <i class="fas fa-check-double"></i> Mark as Completed
                             </button>
@@ -714,12 +808,10 @@ $conn->close();
 <div id="renterModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h3><i class="fas fa-user-circle"></i> Renter Details</h3>
+            <h3><i class="fas fa-user-circle"></i> Complete Renter Details</h3>
             <span class="close-modal" onclick="closeRenterModal()">&times;</span>
         </div>
-        <div id="renterDetailsContent">
-            <!-- Dynamic content will be inserted here -->
-        </div>
+        <div id="renterDetailsContent"></div>
     </div>
 </div>
 
@@ -728,7 +820,7 @@ function viewRenterDetails(booking) {
     const modalContent = document.getElementById('renterDetailsContent');
     modalContent.innerHTML = `
         <div style="margin-bottom: 20px;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">Personal Information</h4>
+            <h4 style="color: #667eea; margin-bottom: 10px;">📋 Personal Information</h4>
             <p><strong>Full Name:</strong> ${escapeHtml(booking.tenant_name)}</p>
             <p><strong>Email:</strong> ${escapeHtml(booking.tenant_email)}</p>
             <p><strong>Phone:</strong> ${escapeHtml(booking.tenant_phone || 'Not provided')}</p>
@@ -736,25 +828,34 @@ function viewRenterDetails(booking) {
             <p><strong>City:</strong> ${escapeHtml(booking.tenant_city || 'Not provided')}</p>
         </div>
         <div style="margin-bottom: 20px;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">Booking Information</h4>
+            <h4 style="color: #667eea; margin-bottom: 10px;">🏠 Booking Information</h4>
             <p><strong>Property:</strong> ${escapeHtml(booking.property_title)}</p>
             <p><strong>Check-in:</strong> ${new Date(booking.check_in_date).toLocaleDateString()}</p>
             <p><strong>Check-out:</strong> ${new Date(booking.check_out_date).toLocaleDateString()}</p>
             <p><strong>Nights:</strong> ${booking.total_nights}</p>
         </div>
-        <div>
-            <h4 style="color: #667eea; margin-bottom: 10px;">Payment Information</h4>
+        <div style="margin-bottom: 20px;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">💰 Payment Information</h4>
             <p><strong>Total Amount:</strong> ${formatMoney(booking.total_amount)}</p>
-            <p><strong>Deposit Paid:</strong> ${formatMoney(booking.deposit_paid)}</p>
-            <p><strong>Remaining:</strong> ${formatMoney(booking.total_amount - booking.deposit_paid)}</p>
+            <p><strong>Deposit Paid (in Escrow):</strong> <span style="color: #10b981; font-weight: bold;">${formatMoney(booking.deposit_paid)}</span></p>
+            <p><strong>Platform Commission:</strong> ${formatMoney(booking.commission_amount)}</p>
+            <p><strong>You Will Receive:</strong> ${formatMoney(booking.total_amount - booking.commission_amount)}</p>
             ${booking.payment_date ? `<p><strong>Paid on:</strong> ${new Date(booking.payment_date).toLocaleString()}</p>` : ''}
         </div>
         ${booking.special_requests ? `
         <div style="margin-top: 20px; padding: 12px; background: #fef3c7; border-radius: 12px;">
-            <strong>Special Request:</strong>
+            <strong>💬 Special Request:</strong>
             <p style="margin-top: 8px;">${escapeHtml(booking.special_requests)}</p>
         </div>
         ` : ''}
+        <div style="margin-top: 20px; padding: 12px; background: #dbeafe; border-radius: 12px;">
+            <strong>ℹ️ Important Information:</strong>
+            <p style="margin-top: 8px; font-size: 12px;">
+                • The deposit is held in escrow and will be released after check-out.<br>
+                • You will receive the remaining payment directly from the tenant.<br>
+                • Contact the tenant for any special arrangements.
+            </p>
+        </div>
     `;
     document.getElementById('renterModal').style.display = 'flex';
 }
@@ -773,11 +874,14 @@ function markAsCompleted(bookingId) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('✓ Booking marked as completed! Payment has been released.');
+                alert('✓ Booking marked as completed! Payment has been released to your wallet.');
                 location.reload();
             } else {
                 alert('Error: ' + data.error);
             }
+        })
+        .catch(error => {
+            alert('Error: ' + error);
         });
     }
 }
