@@ -2,7 +2,7 @@
 // ============================================
 // FILE: broker_system/admin/negotiations.php
 // ============================================
-// Admin Negotiation Management - Complete
+// Admin Negotiation Management - Integrated with Admin Layout
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -33,7 +33,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notes = $conn->real_escape_string($_POST['admin_notes'] ?? '');
         
         if ($commission > 0 && $deposit > 0) {
-            // Update negotiation with proposed terms
             $stmt = $conn->prepare("
                 UPDATE listing_negotiations 
                 SET proposed_commission = ?, 
@@ -47,44 +46,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("dddsi", $commission, $deposit, $featured_fee, $notes, $negotiation_id);
             
             if ($stmt->execute()) {
-                // Get seller info for notification
                 $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
                 if ($neg) {
-                    // Get listing title
                     $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
                     
-                    // Send notification to seller
                     $notif_stmt = $conn->prepare("
-                        INSERT INTO notifications (user_id, title, message, link, created_at) 
-                        VALUES (?, ?, ?, '/broker_system/user/negotiations.php', NOW())
+                        INSERT INTO notifications (user_id, title, message, created_at) 
+                        VALUES (?, ?, ?, NOW())
                     ");
                     $title = "Commission Proposal for {$listing['title']}";
-                    $msg = "Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit for your listing. Please review and respond.";
+                    $msg = "Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit for your listing.";
                     $notif_stmt->bind_param("iss", $neg['seller_id'], $title, $msg);
                     $notif_stmt->execute();
                     
-                    // Add system message to negotiation chat
-                    $chat_table = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-                    if ($chat_table->num_rows > 0) {
-                        $system_msg = "Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit. Please review and respond.";
-                        $msg_stmt = $conn->prepare("
-                            INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
-                            VALUES (?, 0, 'system', ?, NOW())
-                        ");
-                        $msg_stmt->bind_param("is", $negotiation_id, $system_msg);
-                        $msg_stmt->execute();
-                    }
+                    $conn->query("
+                        INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
+                        VALUES ($negotiation_id, 0, 'system', 'Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit. Please review.', NOW())
+                    ");
                 }
-                $message = "Commission and deposit proposed successfully! Seller has been notified.";
+                $message = "Proposal sent to seller!";
             } else {
-                $error = "Failed to propose terms: " . $conn->error;
+                $error = "Failed to propose terms";
             }
         } else {
             $error = "Please enter valid commission and deposit amounts.";
         }
     } 
     elseif ($action === 'accept_counter') {
-        // Get counter offer details
         $neg = $conn->query("SELECT counter_commission, counter_deposit, seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
         
         if ($neg && $neg['counter_commission']) {
@@ -94,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     proposed_deposit = counter_deposit,
                     counter_commission = NULL,
                     counter_deposit = NULL,
-                    counter_message = NULL,
                     status = 'agreement_accepted',
                     accepted_at = NOW(),
                     updated_at = NOW()
@@ -103,34 +90,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("i", $negotiation_id);
             
             if ($stmt->execute()) {
-                // Get listing title
                 $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
                 
-                // Send notification to seller
                 $notif_stmt = $conn->prepare("
-                    INSERT INTO notifications (user_id, title, message, link, created_at) 
-                    VALUES (?, ?, ?, '/broker_system/user/negotiations.php', NOW())
+                    INSERT INTO notifications (user_id, title, message, created_at) 
+                    VALUES (?, ?, ?, NOW())
                 ");
-                $title = "Counter Offer Accepted - {$listing['title']}";
-                $msg = "Great news! Your counter offer has been accepted. Please proceed with deposit payment to publish your listing.";
+                $title = "Counter Offer Accepted!";
+                $msg = "Great news! Your counter offer has been accepted. Please proceed with deposit payment.";
                 $notif_stmt->bind_param("iss", $neg['seller_id'], $title, $msg);
                 $notif_stmt->execute();
                 
-                // Add system message
-                $chat_table = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-                if ($chat_table->num_rows > 0) {
-                    $system_msg = "Admin has accepted your counter offer! Please proceed with deposit payment.";
-                    $msg_stmt = $conn->prepare("
-                        INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
-                        VALUES (?, 0, 'system', ?, NOW())
-                    ");
-                    $msg_stmt->bind_param("is", $negotiation_id, $system_msg);
-                    $msg_stmt->execute();
-                }
+                $conn->query("
+                    INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
+                    VALUES ($negotiation_id, 0, 'system', 'Admin accepted your counter offer! Please proceed with deposit payment.', NOW())
+                ");
                 
-                $message = "Counter offer accepted! Waiting for seller to pay deposit.";
-            } else {
-                $error = "Failed to accept counter offer";
+                $message = "Counter offer accepted!";
             }
         }
     } 
@@ -139,7 +115,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE listing_negotiations 
             SET counter_commission = NULL,
                 counter_deposit = NULL,
-                counter_message = NULL,
                 status = 'commission_proposed',
                 updated_at = NOW()
             WHERE id = ?
@@ -147,42 +122,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("i", $negotiation_id);
         
         if ($stmt->execute()) {
-            // Get seller info
-            $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
+            $neg = $conn->query("SELECT seller_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
             if ($neg) {
-                $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
-                
-                // Send notification
                 $notif_stmt = $conn->prepare("
-                    INSERT INTO notifications (user_id, title, message, link, created_at) 
-                    VALUES (?, ?, ?, '/broker_system/user/negotiations.php', NOW())
+                    INSERT INTO notifications (user_id, title, message, created_at) 
+                    VALUES (?, ?, ?, NOW())
                 ");
-                $title = "Counter Offer Rejected - {$listing['title']}";
-                $msg = "Your counter offer has been rejected. The original proposal is still available for acceptance.";
+                $title = "Counter Offer Update";
+                $msg = "Your counter offer has been reviewed. The original proposal is still available.";
                 $notif_stmt->bind_param("iss", $neg['seller_id'], $title, $msg);
                 $notif_stmt->execute();
-                
-                // Add system message
-                $chat_table = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-                if ($chat_table->num_rows > 0) {
-                    $system_msg = "Admin has rejected your counter offer. The original proposal is still available.";
-                    $msg_stmt = $conn->prepare("
-                        INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
-                        VALUES (?, 0, 'system', ?, NOW())
-                    ");
-                    $msg_stmt->bind_param("is", $negotiation_id, $system_msg);
-                    $msg_stmt->execute();
-                }
             }
-            $message = "Counter offer rejected. Original proposal remains active.";
-        } else {
-            $error = "Failed to reject counter offer";
+            $message = "Counter offer rejected.";
         }
     }
     elseif ($action === 'approve_payment') {
-        // Get negotiation details
         $neg = $conn->query("
-            SELECT ln.*, l.id as listing_id, l.title, u.email as seller_email 
+            SELECT ln.*, l.id as listing_id, l.title, l.price, l.seller_id as listing_seller_id,
+                   u.id as seller_id, u.email as seller_email
             FROM listing_negotiations ln
             JOIN listings l ON ln.listing_id = l.id
             JOIN users u ON ln.seller_id = u.id
@@ -193,113 +150,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->begin_transaction();
             
             try {
-                // Update negotiation status
                 $conn->query("
                     UPDATE listing_negotiations 
                     SET status = 'published', 
-                        published_at = NOW(),
-                        updated_at = NOW()
+                        published_at = NOW()
                     WHERE id = $negotiation_id
                 ");
                 
-                // Update listing status to active
                 $final_commission = $neg['counter_commission'] ?: $neg['proposed_commission'];
-                $final_deposit = $neg['counter_deposit'] ?: $neg['proposed_deposit'];
-                
                 $conn->query("
                     UPDATE listings 
                     SET status = 'active', 
                         approval_status = 'approved',
-                        admin_commission_percent = $final_commission,
-                        admin_deposit_percent = ($final_deposit / price) * 100,
-                        updated_at = NOW()
+                        admin_commission_percent = $final_commission
                     WHERE id = {$neg['listing_id']}
                 ");
                 
-                // Create payment record if not exists
-                $check_payment = $conn->query("
-                    SELECT id FROM payments 
-                    WHERE transaction_id IN (SELECT id FROM transactions WHERE listing_id = {$neg['listing_id']})
-                    AND type = 'deposit_seller'
-                ");
-                
-                if ($check_payment->num_rows == 0) {
-                    $conn->query("
-                        INSERT INTO payments (user_id, amount, type, status, created_at) 
-                        VALUES ({$neg['seller_id']}, $final_deposit, 'deposit_seller', 'confirmed', NOW())
-                    ");
-                }
-                
-                // Send notification to seller
                 $notif_stmt = $conn->prepare("
-                    INSERT INTO notifications (user_id, title, message, link, created_at) 
-                    VALUES (?, ?, ?, '/broker_system/user/product.php?id={$neg['listing_id']}', NOW())
+                    INSERT INTO notifications (user_id, title, message, created_at) 
+                    VALUES (?, ?, ?, NOW())
                 ");
-                $title = "🎉 Your Listing is Live! - {$neg['title']}";
-                $msg = "Congratulations! Your listing has been published and is now visible to buyers. Start receiving inquiries!";
+                $title = "🎉 Your Listing is Live!";
+                $msg = "Congratulations! Your listing '{$neg['title']}' has been published and is now visible to buyers.";
                 $notif_stmt->bind_param("iss", $neg['seller_id'], $title, $msg);
                 $notif_stmt->execute();
                 
-                // Add system message
-                $chat_table = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-                if ($chat_table->num_rows > 0) {
-                    $system_msg = "🎉 Congratulations! Your listing has been published and is now live on the marketplace.";
-                    $msg_stmt = $conn->prepare("
-                        INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
-                        VALUES (?, 0, 'system', ?, NOW())
-                    ");
-                    $msg_stmt->bind_param("is", $negotiation_id, $system_msg);
-                    $msg_stmt->execute();
-                }
+                $conn->query("
+                    INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
+                    VALUES ($negotiation_id, 0, 'system', '🎉 Congratulations! Your listing has been published and is now live!', NOW())
+                ");
                 
                 $conn->commit();
-                $message = "Payment verified! Listing has been published successfully.";
+                $message = "Listing published successfully!";
                 
             } catch (Exception $e) {
                 $conn->rollback();
-                $error = "Failed to publish listing: " . $e->getMessage();
+                $error = "Failed to publish: " . $e->getMessage();
             }
         }
     }
     elseif ($action === 'send_message') {
-        $message_text = $_POST['message'] ?? '';
+        $message_text = $conn->real_escape_string($_POST['message'] ?? '');
         $negotiation_id = intval($_POST['negotiation_id'] ?? 0);
         
         if (!empty($message_text) && $negotiation_id > 0) {
-            $chat_table = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-            if ($chat_table->num_rows > 0) {
-                $msg_stmt = $conn->prepare("
+            $neg = $conn->query("SELECT seller_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
+            if ($neg) {
+                $conn->query("
                     INSERT INTO negotiation_messages (negotiation_id, sender_id, sender_type, message, created_at) 
-                    VALUES (?, ?, 'admin', ?, NOW())
+                    VALUES ($negotiation_id, {$_SESSION['user_id']}, 'admin', '$message_text', NOW())
                 ");
-                $admin_id = $_SESSION['user_id'];
-                $msg_stmt->bind_param("iis", $negotiation_id, $admin_id, $message_text);
-                $msg_stmt->execute();
                 
-                // Get seller ID for notification
-                $neg = $conn->query("SELECT seller_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
-                if ($neg) {
-                    $notif_stmt = $conn->prepare("
-                        INSERT INTO notifications (user_id, title, message, link, created_at) 
-                        VALUES (?, 'New Message', ?, '/broker_system/user/negotiate.php?id=$negotiation_id', NOW())
-                    ");
-                    $notif_stmt->bind_param("is", $neg['seller_id'], $message_text);
-                    $notif_stmt->execute();
-                }
+                $notif_stmt = $conn->prepare("
+                    INSERT INTO notifications (user_id, title, message, created_at) 
+                    VALUES (?, 'New Message', ?, NOW())
+                ");
+                $notif_stmt->bind_param("is", $neg['seller_id'], $message_text);
+                $notif_stmt->execute();
                 
-                $message = "Message sent to seller!";
-            } else {
-                $error = "Chat system not available";
+                $message = "Message sent!";
             }
         }
     }
 }
 
-// Get all negotiations with different statuses
+// Get stats
+$stats = [
+    'pending' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'under_review'")->fetch_assoc()['count'],
+    'proposed' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'commission_proposed'")->fetch_assoc()['count'],
+    'counter' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'counter_offer_sent'")->fetch_assoc()['count'],
+    'payment' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'agreement_accepted'")->fetch_assoc()['count']
+];
+
+// Get negotiations
 $pending_review = $conn->query("
     SELECT ln.*, l.title, l.type, l.price, l.created_at as listing_created,
-           u.full_name as seller_name, u.email as seller_email,
-           (SELECT COUNT(*) FROM negotiation_messages WHERE negotiation_id = ln.id AND is_read = 0 AND sender_type = 'seller') as unread_count
+           u.full_name as seller_name, u.email as seller_email
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
     JOIN users u ON ln.seller_id = u.id
@@ -309,8 +235,7 @@ $pending_review = $conn->query("
 
 $proposed = $conn->query("
     SELECT ln.*, l.title, l.type, l.price,
-           u.full_name as seller_name, u.email as seller_email,
-           (SELECT COUNT(*) FROM negotiation_messages WHERE negotiation_id = ln.id AND is_read = 0 AND sender_type = 'seller') as unread_count
+           u.full_name as seller_name, u.email as seller_email
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
     JOIN users u ON ln.seller_id = u.id
@@ -320,8 +245,7 @@ $proposed = $conn->query("
 
 $counter_offers = $conn->query("
     SELECT ln.*, l.title, l.type, l.price,
-           u.full_name as seller_name, u.email as seller_email,
-           (SELECT COUNT(*) FROM negotiation_messages WHERE negotiation_id = ln.id AND is_read = 0 AND sender_type = 'seller') as unread_count
+           u.full_name as seller_name, u.email as seller_email
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
     JOIN users u ON ln.seller_id = u.id
@@ -331,8 +255,7 @@ $counter_offers = $conn->query("
 
 $awaiting_payment = $conn->query("
     SELECT ln.*, l.title, l.type, l.price,
-           u.full_name as seller_name, u.email as seller_email,
-           (SELECT COUNT(*) FROM negotiation_messages WHERE negotiation_id = ln.id AND is_read = 0 AND sender_type = 'seller') as unread_count
+           u.full_name as seller_name, u.email as seller_email
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
     JOIN users u ON ln.seller_id = u.id
@@ -340,34 +263,12 @@ $awaiting_payment = $conn->query("
     ORDER BY ln.accepted_at ASC
 ");
 
-// Count statistics
-$stats = [
-    'pending' => $pending_review ? $pending_review->num_rows : 0,
-    'proposed' => $proposed ? $proposed->num_rows : 0,
-    'counter' => $counter_offers ? $counter_offers->num_rows : 0,
-    'payment' => $awaiting_payment ? $awaiting_payment->num_rows : 0
-];
-
 $conn->close();
 ?>
 
 <style>
-    :root {
-        --primary: #667eea;
-        --secondary: #764ba2;
-        --success: #10b981;
-        --warning: #f59e0b;
-        --danger: #ef4444;
-        --info: #3b82f6;
-        --dark: #1e293b;
-        --gray: #64748b;
-        --light: #f8fafc;
-        --border: #e2e8f0;
-    }
-    
     .admin-negotiations {
-        max-width: 1400px;
-        margin: 0 auto;
+        max-width: 100%;
     }
     
     /* Stats Grid */
@@ -383,9 +284,10 @@ $conn->close();
         border-radius: 20px;
         padding: 24px;
         text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        transition: all 0.3s;
         cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        border: 1px solid #e2e8f0;
     }
     
     .stat-card:hover {
@@ -396,12 +298,12 @@ $conn->close();
     .stat-value {
         font-size: 32px;
         font-weight: 700;
-        color: var(--dark);
+        color: #0f172a;
     }
     
     .stat-label {
         font-size: 13px;
-        color: var(--gray);
+        color: #64748b;
         margin-top: 6px;
     }
     
@@ -412,11 +314,12 @@ $conn->close();
         margin-bottom: 32px;
         overflow: hidden;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        border: 1px solid #e2e8f0;
     }
     
     .section-header {
         padding: 20px 24px;
-        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        background: linear-gradient(135deg, #667eea, #764ba2);
         color: white;
         font-size: 18px;
         font-weight: 600;
@@ -427,10 +330,6 @@ $conn->close();
         gap: 12px;
     }
     
-    .section-header i {
-        margin-right: 8px;
-    }
-    
     .badge-count {
         background: rgba(255,255,255,0.2);
         padding: 4px 12px;
@@ -438,22 +337,18 @@ $conn->close();
         font-size: 13px;
     }
     
-    /* Negotiation Items */
-    .negotiation-item {
+    /* Negotiation Card */
+    .negotiation-card {
         padding: 20px 24px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid #e2e8f0;
         transition: all 0.3s;
     }
     
-    .negotiation-item:hover {
-        background: var(--light);
+    .negotiation-card:hover {
+        background: #f8fafc;
     }
     
-    .negotiation-item:last-child {
-        border-bottom: none;
-    }
-    
-    .item-header {
+    .card-header {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
@@ -462,67 +357,40 @@ $conn->close();
         margin-bottom: 12px;
     }
     
-    .listing-info {
-        flex: 1;
-    }
-    
     .listing-title {
         font-size: 16px;
         font-weight: 700;
-        color: var(--dark);
-        margin-bottom: 4px;
+        color: #0f172a;
     }
     
     .seller-info {
         font-size: 12px;
-        color: var(--gray);
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
+        color: #64748b;
         margin-top: 4px;
     }
     
     .seller-info i {
         width: 14px;
-        color: var(--primary);
-    }
-    
-    .price-info {
-        text-align: right;
+        color: #667eea;
     }
     
     .price {
         font-size: 18px;
         font-weight: 700;
-        color: var(--primary);
+        color: #667eea;
     }
     
-    .type-badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 12px;
-        font-size: 10px;
-        font-weight: 600;
-        margin-top: 4px;
-    }
-    
-    .type-rental { background: #dbeafe; color: #1e40af; }
-    .type-product { background: #d1fae5; color: #065f46; }
-    .type-job { background: #fed7aa; color: #9a3412; }
-    
-    /* Offer Details */
     .offer-details {
         display: flex;
         gap: 24px;
         flex-wrap: wrap;
         margin: 12px 0;
         padding: 12px;
-        background: var(--light);
+        background: #f8fafc;
         border-radius: 12px;
     }
     
-    .offer-detail {
+    .offer-item {
         display: flex;
         align-items: baseline;
         gap: 8px;
@@ -530,7 +398,7 @@ $conn->close();
     
     .offer-label {
         font-size: 11px;
-        color: var(--gray);
+        color: #64748b;
     }
     
     .offer-value {
@@ -538,27 +406,22 @@ $conn->close();
         font-weight: 700;
     }
     
-    .offer-value.proposed { color: var(--primary); }
-    .offer-value.counter { color: var(--warning); }
+    .offer-value.proposed {
+        color: #667eea;
+    }
     
-    /* Counter Offer Box */
+    .offer-value.counter {
+        color: #f59e0b;
+    }
+    
     .counter-box {
         background: #fef3c7;
-        border-radius: 12px;
         padding: 12px;
+        border-radius: 12px;
         margin: 12px 0;
-        border-left: 3px solid var(--warning);
+        border-left: 3px solid #f59e0b;
     }
     
-    .counter-message {
-        font-size: 12px;
-        color: #92400e;
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px dashed #fde68a;
-    }
-    
-    /* Action Buttons */
     .action-buttons {
         display: flex;
         gap: 10px;
@@ -570,21 +433,21 @@ $conn->close();
         padding: 8px 16px;
         font-size: 12px;
         border-radius: 8px;
-        text-decoration: none;
         font-weight: 500;
-        transition: all 0.3s;
         cursor: pointer;
+        transition: all 0.3s;
         border: none;
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        text-decoration: none;
     }
     
-    .btn-primary { background: var(--primary); color: white; }
-    .btn-success { background: var(--success); color: white; }
-    .btn-warning { background: var(--warning); color: white; }
-    .btn-danger { background: var(--danger); color: white; }
-    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--gray); }
+    .btn-primary { background: #667eea; color: white; }
+    .btn-success { background: #10b981; color: white; }
+    .btn-warning { background: #f59e0b; color: white; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
     
     .btn-sm:hover {
         transform: translateY(-2px);
@@ -621,24 +484,24 @@ $conn->close();
         align-items: center;
         margin-bottom: 20px;
         padding-bottom: 12px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid #e2e8f0;
     }
     
     .modal-header h3 {
         font-size: 20px;
         font-weight: 600;
-        color: var(--dark);
+        color: #0f172a;
     }
     
     .close-modal {
         cursor: pointer;
         font-size: 28px;
-        color: var(--gray);
+        color: #94a3b8;
         transition: color 0.3s;
     }
     
     .close-modal:hover {
-        color: var(--danger);
+        color: #ef4444;
     }
     
     .form-group {
@@ -650,20 +513,20 @@ $conn->close();
         margin-bottom: 6px;
         font-weight: 600;
         font-size: 13px;
-        color: var(--dark);
+        color: #334155;
     }
     
-    .form-group input, .form-group textarea, .form-group select {
+    .form-group input, .form-group textarea {
         width: 100%;
         padding: 10px 12px;
-        border: 1px solid var(--border);
+        border: 1px solid #e2e8f0;
         border-radius: 10px;
         font-size: 14px;
     }
     
     .form-group input:focus, .form-group textarea:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: #667eea;
     }
     
     .form-row {
@@ -674,34 +537,66 @@ $conn->close();
     
     .info-text {
         font-size: 11px;
-        color: var(--gray);
+        color: #64748b;
         margin-top: 4px;
+        display: block;
+    }
+    
+    .chat-messages {
+        max-height: 400px;
+        overflow-y: auto;
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #f8fafc;
+        border-radius: 12px;
+    }
+    
+    .message {
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 12px;
+    }
+    
+    .message-admin {
+        background: #e0e7ff;
+    }
+    
+    .message-seller {
+        background: #d1fae5;
+    }
+    
+    .message-system {
+        background: #fef3c7;
+        text-align: center;
     }
     
     .empty-state {
         padding: 40px;
         text-align: center;
-        color: var(--gray);
+        color: #64748b;
     }
     
-    .unread-indicator {
-        background: var(--danger);
-        color: white;
-        font-size: 10px;
-        padding: 2px 6px;
-        border-radius: 10px;
-        margin-left: 8px;
+    .alert {
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+    }
+    
+    .alert-success {
+        background: #d1fae5;
+        color: #059669;
+        border-left: 4px solid #059669;
+    }
+    
+    .alert-error {
+        background: #fee2e2;
+        color: #dc2626;
+        border-left: 4px solid #dc2626;
     }
     
     @media (max-width: 768px) {
         .stats-grid {
             grid-template-columns: repeat(2, 1fr);
-        }
-        .item-header {
-            flex-direction: column;
-        }
-        .price-info {
-            text-align: left;
         }
         .offer-details {
             flex-direction: column;
@@ -710,257 +605,209 @@ $conn->close();
         .action-buttons {
             flex-direction: column;
         }
-        .btn-sm {
-            justify-content: center;
-        }
         .form-row {
             grid-template-columns: 1fr;
+        }
+        .section-header {
+            flex-direction: column;
+            text-align: center;
         }
     }
 </style>
 
 <div class="admin-negotiations">
-    <!-- Statistics -->
+    <!-- Stats -->
     <div class="stats-grid">
         <div class="stat-card" onclick="document.getElementById('pendingSection').scrollIntoView({behavior: 'smooth'})">
             <div class="stat-value"><?php echo $stats['pending']; ?></div>
-            <div class="stat-label">Pending Review</div>
+            <div class="stat-label">📋 Pending Review</div>
         </div>
         <div class="stat-card" onclick="document.getElementById('proposedSection').scrollIntoView({behavior: 'smooth'})">
             <div class="stat-value"><?php echo $stats['proposed']; ?></div>
-            <div class="stat-label">Awaiting Seller Response</div>
+            <div class="stat-label">⏳ Awaiting Response</div>
         </div>
         <div class="stat-card" onclick="document.getElementById('counterSection').scrollIntoView({behavior: 'smooth'})">
             <div class="stat-value"><?php echo $stats['counter']; ?></div>
-            <div class="stat-label">Counter Offers Received</div>
+            <div class="stat-label">🔄 Counter Offers</div>
         </div>
         <div class="stat-card" onclick="document.getElementById('paymentSection').scrollIntoView({behavior: 'smooth'})">
             <div class="stat-value"><?php echo $stats['payment']; ?></div>
-            <div class="stat-label">Awaiting Payment Verification</div>
+            <div class="stat-label">💰 Payment Due</div>
         </div>
     </div>
     
     <?php if ($message): ?>
-        <div class="alert alert-success" style="background: #d1fae5; color: #059669; padding: 12px 16px; border-radius: 12px; margin-bottom: 20px;">
-            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($message); ?>
-        </div>
+        <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($message); ?></div>
     <?php endif; ?>
     
     <?php if ($error): ?>
-        <div class="alert alert-error" style="background: #fee2e2; color: #dc2626; padding: 12px 16px; border-radius: 12px; margin-bottom: 20px;">
-            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
-        </div>
+        <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div>
     <?php endif; ?>
     
-    <!-- Pending Review Section -->
+    <!-- Pending Review -->
     <div id="pendingSection" class="section-card">
         <div class="section-header">
-            <div>
-                <i class="fas fa-clock"></i> Pending Review
-            </div>
-            <div class="badge-count"><?php echo $stats['pending']; ?> listings</div>
+            <span><i class="fas fa-clock"></i> Pending Review</span>
+            <span class="badge-count"><?php echo $pending_review->num_rows; ?> listings</span>
         </div>
-        <?php if ($pending_review && $pending_review->num_rows > 0): ?>
+        <?php if ($pending_review->num_rows > 0): ?>
             <?php while($neg = $pending_review->fetch_assoc()): ?>
-                <div class="negotiation-item">
-                    <div class="item-header">
-                        <div class="listing-info">
+                <div class="negotiation-card">
+                    <div class="card-header">
+                        <div>
                             <div class="listing-title"><?php echo htmlspecialchars($neg['title']); ?></div>
                             <div class="seller-info">
-                                <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?></span>
-                                <span><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($neg['seller_email']); ?></span>
-                                <span class="type-badge type-<?php echo $neg['type']; ?>">
-                                    <?php 
-                                    if ($neg['type'] == 'rental') echo '🏠 Rental';
-                                    elseif ($neg['type'] == 'product') echo '🚗 Product';
-                                    else echo '💼 Job';
-                                    ?>
-                                </span>
+                                <i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?> • 
+                                <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($neg['seller_email']); ?>
                             </div>
                         </div>
-                        <div class="price-info">
-                            <div class="price"><?php echo formatMoney($neg['price']); ?></div>
-                            <div class="listing-date" style="font-size: 11px; color: var(--gray);">
-                                <i class="far fa-calendar"></i> <?php echo date('M d, Y', strtotime($neg['listing_created'])); ?>
-                            </div>
-                        </div>
+                        <div class="price"><?php echo formatMoney($neg['price']); ?></div>
                     </div>
                     <div class="action-buttons">
                         <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['price']; ?>, '<?php echo $neg['type']; ?>')" class="btn-sm btn-primary">
-                            <i class="fas fa-percent"></i> Review & Propose Terms
-                        </button>
-                        <button onclick="viewListingDetails(<?php echo $neg['listing_id']; ?>)" class="btn-sm btn-outline">
-                            <i class="fas fa-eye"></i> View Listing
+                            <i class="fas fa-percent"></i> Propose Terms
                         </button>
                     </div>
                 </div>
             <?php endwhile; ?>
         <?php else: ?>
-            <div class="empty-state">
-                <i class="fas fa-check-circle" style="font-size: 48px; color: var(--success); margin-bottom: 12px; display: block;"></i>
-                No pending reviews. All listings have been processed.
-            </div>
+            <div class="empty-state">✨ No pending reviews. All caught up!</div>
         <?php endif; ?>
     </div>
     
-    <!-- Proposed - Awaiting Seller Response -->
+    <!-- Awaiting Seller Response -->
     <div id="proposedSection" class="section-card">
         <div class="section-header">
-            <div>
-                <i class="fas fa-hourglass-half"></i> Awaiting Seller Response
-            </div>
-            <div class="badge-count"><?php echo $stats['proposed']; ?> listings</div>
+            <span><i class="fas fa-hourglass-half"></i> Awaiting Seller Response</span>
+            <span class="badge-count"><?php echo $proposed->num_rows; ?> listings</span>
         </div>
-        <?php if ($proposed && $proposed->num_rows > 0): ?>
+        <?php if ($proposed->num_rows > 0): ?>
             <?php while($neg = $proposed->fetch_assoc()): ?>
-                <div class="negotiation-item">
-                    <div class="item-header">
-                        <div class="listing-info">
+                <div class="negotiation-card">
+                    <div class="card-header">
+                        <div>
                             <div class="listing-title"><?php echo htmlspecialchars($neg['title']); ?></div>
                             <div class="seller-info">
-                                <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?></span>
-                                <span><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($neg['seller_email']); ?></span>
+                                <i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?>
                             </div>
                         </div>
-                        <div class="price-info">
-                            <div class="price"><?php echo formatMoney($neg['price']); ?></div>
-                        </div>
+                        <div class="price"><?php echo formatMoney($neg['price']); ?></div>
                     </div>
                     <div class="offer-details">
-                        <div class="offer-detail">
-                            <span class="offer-label">Proposed Commission:</span>
+                        <div class="offer-item">
+                            <span class="offer-label">Commission:</span>
                             <span class="offer-value proposed"><?php echo $neg['proposed_commission']; ?>%</span>
                         </div>
-                        <div class="offer-detail">
-                            <span class="offer-label">Proposed Deposit:</span>
+                        <div class="offer-item">
+                            <span class="offer-label">Deposit:</span>
                             <span class="offer-value proposed"><?php echo formatMoney($neg['proposed_deposit']); ?></span>
                         </div>
                     </div>
                     <div class="action-buttons">
                         <button onclick="openChatModal(<?php echo $neg['id']; ?>)" class="btn-sm btn-primary">
-                            <i class="fas fa-comments"></i> Chat with Seller
-                            <?php if ($neg['unread_count'] > 0): ?>
-                                <span class="unread-indicator"><?php echo $neg['unread_count']; ?></span>
-                            <?php endif; ?>
-                        </button>
-                        <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['price']; ?>, '<?php echo $neg['type']; ?>')" class="btn-sm btn-outline">
-                            <i class="fas fa-edit"></i> Modify Offer
+                            <i class="fas fa-comments"></i> Send Message
                         </button>
                     </div>
                 </div>
             <?php endwhile; ?>
         <?php else: ?>
-            <div class="empty-state">No pending seller responses</div>
+            <div class="empty-state">No pending responses</div>
         <?php endif; ?>
     </div>
     
-    <!-- Counter Offers Received -->
+    <!-- Counter Offers -->
     <div id="counterSection" class="section-card">
         <div class="section-header">
-            <div>
-                <i class="fas fa-exchange-alt"></i> Counter Offers Received
-            </div>
-            <div class="badge-count"><?php echo $stats['counter']; ?> listings</div>
+            <span><i class="fas fa-exchange-alt"></i> Counter Offers Received</span>
+            <span class="badge-count"><?php echo $counter_offers->num_rows; ?> listings</span>
         </div>
-        <?php if ($counter_offers && $counter_offers->num_rows > 0): ?>
+        <?php if ($counter_offers->num_rows > 0): ?>
             <?php while($neg = $counter_offers->fetch_assoc()): ?>
-                <div class="negotiation-item">
-                    <div class="item-header">
-                        <div class="listing-info">
+                <div class="negotiation-card">
+                    <div class="card-header">
+                        <div>
                             <div class="listing-title"><?php echo htmlspecialchars($neg['title']); ?></div>
                             <div class="seller-info">
-                                <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?></span>
-                                <span><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($neg['seller_email']); ?></span>
+                                <i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?>
                             </div>
                         </div>
-                        <div class="price-info">
-                            <div class="price"><?php echo formatMoney($neg['price']); ?></div>
-                        </div>
+                        <div class="price"><?php echo formatMoney($neg['price']); ?></div>
                     </div>
                     <div class="offer-details">
-                        <div class="offer-detail">
-                            <span class="offer-label">Original Offer:</span>
+                        <div class="offer-item">
+                            <span class="offer-label">Our Offer:</span>
                             <span class="offer-value proposed"><?php echo $neg['proposed_commission']; ?>% / <?php echo formatMoney($neg['proposed_deposit']); ?></span>
                         </div>
-                        <div class="offer-detail">
+                        <div class="offer-item">
                             <span class="offer-label">Seller Counter:</span>
                             <span class="offer-value counter"><?php echo $neg['counter_commission']; ?>% / <?php echo formatMoney($neg['counter_deposit']); ?></span>
                         </div>
                     </div>
                     <?php if ($neg['counter_message']): ?>
-                    <div class="counter-box">
-                        <i class="fas fa-quote-left"></i> <?php echo htmlspecialchars($neg['counter_message']); ?>
-                    </div>
+                        <div class="counter-box">
+                            <i class="fas fa-quote-left"></i> <?php echo htmlspecialchars($neg['counter_message']); ?>
+                        </div>
                     <?php endif; ?>
                     <div class="action-buttons">
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
                             <input type="hidden" name="action" value="accept_counter">
-                            <button type="submit" class="btn-sm btn-success" onclick="return confirm('Accept this counter offer? The seller will then need to pay the deposit.')">
-                                <i class="fas fa-check"></i> Accept Counter Offer
+                            <button type="submit" class="btn-sm btn-success" onclick="return confirm('Accept this counter offer?')">
+                                <i class="fas fa-check"></i> Accept
                             </button>
                         </form>
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
                             <input type="hidden" name="action" value="reject_counter">
-                            <button type="submit" class="btn-sm btn-danger" onclick="return confirm('Reject this counter offer? The original offer will remain active.')">
-                                <i class="fas fa-times"></i> Reject Counter Offer
+                            <button type="submit" class="btn-sm btn-danger" onclick="return confirm('Reject this counter offer?')">
+                                <i class="fas fa-times"></i> Reject
                             </button>
                         </form>
                         <button onclick="openChatModal(<?php echo $neg['id']; ?>)" class="btn-sm btn-primary">
-                            <i class="fas fa-comments"></i> Chat
+                            <i class="fas fa-comments"></i> Discuss
                         </button>
                     </div>
                 </div>
             <?php endwhile; ?>
         <?php else: ?>
-            <div class="empty-state">No counter offers received</div>
+            <div class="empty-state">No counter offers</div>
         <?php endif; ?>
     </div>
     
-    <!-- Awaiting Payment Verification -->
+    <!-- Awaiting Payment -->
     <div id="paymentSection" class="section-card">
         <div class="section-header">
-            <div>
-                <i class="fas fa-credit-card"></i> Awaiting Payment Verification
-            </div>
-            <div class="badge-count"><?php echo $stats['payment']; ?> listings</div>
+            <span><i class="fas fa-credit-card"></i> Awaiting Payment Verification</span>
+            <span class="badge-count"><?php echo $awaiting_payment->num_rows; ?> listings</span>
         </div>
-        <?php if ($awaiting_payment && $awaiting_payment->num_rows > 0): ?>
+        <?php if ($awaiting_payment->num_rows > 0): ?>
             <?php while($neg = $awaiting_payment->fetch_assoc()): ?>
-                <div class="negotiation-item">
-                    <div class="item-header">
-                        <div class="listing-info">
+                <div class="negotiation-card">
+                    <div class="card-header">
+                        <div>
                             <div class="listing-title"><?php echo htmlspecialchars($neg['title']); ?></div>
                             <div class="seller-info">
-                                <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?></span>
-                                <span><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($neg['seller_email']); ?></span>
+                                <i class="fas fa-user"></i> <?php echo htmlspecialchars($neg['seller_name']); ?>
                             </div>
                         </div>
-                        <div class="price-info">
-                            <div class="price"><?php echo formatMoney($neg['price']); ?></div>
-                        </div>
+                        <div class="price"><?php echo formatMoney($neg['price']); ?></div>
                     </div>
                     <div class="offer-details">
-                        <div class="offer-detail">
+                        <div class="offer-item">
                             <span class="offer-label">Agreed Commission:</span>
                             <span class="offer-value proposed"><?php echo $neg['counter_commission'] ?: $neg['proposed_commission']; ?>%</span>
                         </div>
-                        <div class="offer-detail">
-                            <span class="offer-label">Deposit to Collect:</span>
+                        <div class="offer-item">
+                            <span class="offer-label">Deposit Amount:</span>
                             <span class="offer-value proposed"><?php echo formatMoney($neg['counter_deposit'] ?: $neg['proposed_deposit']); ?></span>
-                        </div>
-                        <div class="offer-detail">
-                            <span class="offer-label">Agreed On:</span>
-                            <span class="offer-value"><?php echo date('M d, Y', strtotime($neg['accepted_at'])); ?></span>
                         </div>
                     </div>
                     <div class="action-buttons">
-                        <form method="POST" style="display: inline;">
+                        <form method="POST">
                             <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
                             <input type="hidden" name="action" value="approve_payment">
-                            <button type="submit" class="btn-sm btn-success" onclick="return confirm('Verify payment and publish this listing? This action cannot be undone.')">
-                                <i class="fas fa-check-circle"></i> Verify Payment & Publish
+                            <button type="submit" class="btn-sm btn-success" onclick="return confirm('Verify payment and publish this listing?')">
+                                <i class="fas fa-check-circle"></i> Verify & Publish
                             </button>
                         </form>
                         <button onclick="openChatModal(<?php echo $neg['id']; ?>)" class="btn-sm btn-primary">
@@ -970,7 +817,7 @@ $conn->close();
                 </div>
             <?php endwhile; ?>
         <?php else: ?>
-            <div class="empty-state">No listings awaiting payment verification</div>
+            <div class="empty-state">No pending payments</div>
         <?php endif; ?>
     </div>
 </div>
@@ -980,22 +827,22 @@ $conn->close();
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-percent"></i> Propose Commission & Deposit</h3>
-            <span class="close-modal" onclick="closeModal()">&times;</span>
+            <span class="close-modal" onclick="closeModal('proposeModal')">&times;</span>
         </div>
-        <form method="POST" id="proposeForm">
+        <form method="POST">
             <input type="hidden" name="negotiation_id" id="proposeNegotiationId">
             <input type="hidden" name="action" value="propose">
             
             <div class="form-group">
                 <label>Listing Price</label>
-                <input type="text" id="listingPriceDisplay" disabled style="background: var(--light);">
+                <input type="text" id="listingPriceDisplay" disabled style="background:#f8fafc;">
             </div>
             
             <div class="form-row">
                 <div class="form-group">
                     <label>Commission (%)</label>
                     <input type="number" name="commission_percent" id="commissionPercent" step="0.5" min="1" max="20" required>
-                    <div id="commissionRecommendation" class="info-text"></div>
+                    <small id="commissionRecommendation" class="info-text"></small>
                 </div>
                 <div class="form-group">
                     <label>Deposit Amount (ETB)</label>
@@ -1004,18 +851,12 @@ $conn->close();
             </div>
             
             <div class="form-group">
-                <label>Featured Listing Fee (Optional)</label>
-                <input type="number" name="featured_fee" id="featuredFee" step="100" min="0" value="0">
-                <div class="info-text">Featured listings appear at the top of search results</div>
-            </div>
-            
-            <div class="form-group">
                 <label>Admin Notes (Optional)</label>
                 <textarea name="admin_notes" rows="3" placeholder="Add any notes for the seller..."></textarea>
             </div>
             
-            <button type="submit" class="btn-sm btn-primary" style="width: 100%; padding: 12px;">
-                <i class="fas fa-paper-plane"></i> Send Proposal to Seller
+            <button type="submit" class="btn-sm btn-primary" style="width:100%; padding:12px;">
+                <i class="fas fa-paper-plane"></i> Send Proposal
             </button>
         </form>
     </div>
@@ -1023,19 +864,19 @@ $conn->close();
 
 <!-- Chat Modal -->
 <div id="chatModal" class="modal">
-    <div class="modal-content" style="width: 600px;">
+    <div class="modal-content" style="width:600px;">
         <div class="modal-header">
             <h3><i class="fas fa-comments"></i> Negotiation Chat</h3>
-            <span class="close-modal" onclick="closeChatModal()">&times;</span>
+            <span class="close-modal" onclick="closeModal('chatModal')">&times;</span>
         </div>
-        <div id="chatContent" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px; padding: 12px; background: var(--light); border-radius: 12px;">
-            <div class="loading" style="text-align: center; padding: 20px;">Loading messages...</div>
+        <div id="chatMessages" class="chat-messages">
+            <div style="text-align:center; padding:20px;">Loading messages...</div>
         </div>
         <form method="POST" id="chatForm">
             <input type="hidden" name="negotiation_id" id="chatNegotiationId">
             <input type="hidden" name="action" value="send_message">
-            <textarea name="message" class="form-group" rows="3" placeholder="Type your message to the seller..." required style="width: 100%; margin-bottom: 12px;"></textarea>
-            <button type="submit" class="btn-sm btn-primary" style="width: 100%; padding: 12px;">
+            <textarea name="message" rows="3" placeholder="Type your message..." required style="width:100%; margin-bottom:12px; padding:10px; border-radius:8px; border:1px solid #e2e8f0;"></textarea>
+            <button type="submit" class="btn-sm btn-primary" style="width:100%; padding:12px;">
                 <i class="fas fa-paper-plane"></i> Send Message
             </button>
         </form>
@@ -1043,142 +884,100 @@ $conn->close();
 </div>
 
 <script>
-// Scroll to section when clicking stat card
-let currentNegotiationId = null;
-
-function openProposeModal(negotiationId, price, type) {
-    document.getElementById('proposeNegotiationId').value = negotiationId;
-    document.getElementById('listingPriceDisplay').value = formatMoney(price);
+    let currentNegotiationId = null;
+    let chatRefreshInterval = null;
     
-    // Smart commission recommendation
-    let recommendedCommission = 5;
-    if (type === 'rental') recommendedCommission = 7;
-    else if (type === 'product') recommendedCommission = 5;
-    else if (type === 'job') recommendedCommission = 8;
+    function openProposeModal(negotiationId, price, type) {
+        document.getElementById('proposeNegotiationId').value = negotiationId;
+        document.getElementById('listingPriceDisplay').value = formatMoney(price);
+        
+        let recommendedCommission = 5;
+        if (type === 'rental') recommendedCommission = 7;
+        else if (type === 'product') recommendedCommission = 5;
+        else if (type === 'job') recommendedCommission = 8;
+        
+        if (price > 2000000) recommendedCommission = 3;
+        else if (price >= 500000) recommendedCommission = 5;
+        
+        document.getElementById('commissionPercent').value = recommendedCommission;
+        document.getElementById('commissionRecommendation').innerHTML = `🤖 AI Recommendation: ${recommendedCommission}%`;
+        
+        let recommendedDeposit = price * 0.25;
+        if (recommendedDeposit > 50000) recommendedDeposit = 50000;
+        document.getElementById('depositAmount').value = Math.round(recommendedDeposit);
+        
+        document.getElementById('proposeModal').style.display = 'flex';
+    }
     
-    if (price > 2000000) recommendedCommission = 3;
-    else if (price >= 500000) recommendedCommission = 5;
+    async function openChatModal(negotiationId) {
+        currentNegotiationId = negotiationId;
+        document.getElementById('chatNegotiationId').value = negotiationId;
+        document.getElementById('chatModal').style.display = 'flex';
+        await loadChatMessages(negotiationId);
+        startChatRefresh();
+    }
     
-    document.getElementById('commissionPercent').value = recommendedCommission;
-    document.getElementById('commissionRecommendation').innerHTML = 
-        `<i class="fas fa-robot"></i> AI Recommendation: ${recommendedCommission}% based on listing value`;
-    
-    // Recommended deposit (25% of price, capped at 50,000)
-    let recommendedDeposit = price * 0.25;
-    if (recommendedDeposit > 50000) recommendedDeposit = 50000;
-    document.getElementById('depositAmount').value = Math.round(recommendedDeposit);
-    
-    document.getElementById('proposeModal').style.display = 'flex';
-}
-
-function openChatModal(negotiationId) {
-    currentNegotiationId = negotiationId;
-    document.getElementById('chatNegotiationId').value = negotiationId;
-    document.getElementById('chatModal').style.display = 'flex';
-    
-    // Load chat messages via AJAX
-    fetch(`ajax/get_negotiation_messages.php?id=${negotiationId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
+    async function loadChatMessages(negotiationId) {
+        try {
+            const response = await fetch(`ajax/get_negotiation_messages.php?id=${negotiationId}`);
+            const data = await response.json();
+            
+            if (data.success && data.messages) {
                 let html = '';
                 data.messages.forEach(msg => {
                     const isAdmin = msg.sender_type === 'admin';
                     const isSystem = msg.sender_type === 'system';
-                    const bgColor = isSystem ? '#fef3c7' : (isAdmin ? '#e0e7ff' : '#f8fafc');
-                    const textColor = isSystem ? '#92400e' : (isAdmin ? '#1e40af' : '#1e293b');
-                    const align = isSystem ? 'center' : (isAdmin ? 'left' : 'right');
+                    const bgClass = isSystem ? 'message-system' : (isAdmin ? 'message-admin' : 'message-seller');
                     
                     html += `
-                        <div style="margin-bottom: 16px; padding: 12px; background: ${bgColor}; border-radius: 12px; text-align: ${align};">
-                            <strong style="color: ${textColor};">
-                                ${isSystem ? '📢 System' : (isAdmin ? '👨‍💼 Admin' : '👤 Seller')}
-                            </strong>
-                            <div style="font-size: 13px; margin-top: 6px; color: ${textColor};">${escapeHtml(msg.message)}</div>
-                            <div style="font-size: 10px; color: #64748b; margin-top: 8px;">${msg.time}</div>
+                        <div class="message ${bgClass}">
+                            <strong>${isSystem ? '📢 System' : (isAdmin ? '👨‍💼 You' : '👤 Seller')}</strong>
+                            <div style="margin-top:6px;">${escapeHtml(msg.message)}</div>
+                            <div style="font-size:10px; color:#64748b; margin-top:8px;">${msg.time}</div>
                         </div>
                     `;
                 });
-                document.getElementById('chatContent').innerHTML = html || '<div style="text-align: center; padding: 20px;">No messages yet. Start the conversation!</div>';
+                document.getElementById('chatMessages').innerHTML = html || '<div style="text-align:center; padding:20px;">No messages yet</div>';
+                document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
             }
-        })
-        .catch(error => {
-            document.getElementById('chatContent').innerHTML = '<div style="text-align: center; padding: 20px; color: red;">Failed to load messages</div>';
-        });
-}
-
-function viewListingDetails(listingId) {
-    window.open(`/broker_system/user/product.php?id=${listingId}`, '_blank');
-}
-
-function closeModal() {
-    document.getElementById('proposeModal').style.display = 'none';
-}
-
-function closeChatModal() {
-    document.getElementById('chatModal').style.display = 'none';
-}
-
-function formatMoney(amount) {
-    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + ' ETB';
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Auto-refresh chat modal every 10 seconds if open
-let chatRefreshInterval = null;
-
-function startChatRefresh() {
-    if (chatRefreshInterval) clearInterval(chatRefreshInterval);
-    chatRefreshInterval = setInterval(() => {
-        if (currentNegotiationId && document.getElementById('chatModal').style.display === 'flex') {
-            fetch(`ajax/get_negotiation_messages.php?id=${currentNegotiationId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success && data.messages) {
-                        let html = '';
-                        data.messages.forEach(msg => {
-                            const isAdmin = msg.sender_type === 'admin';
-                            const isSystem = msg.sender_type === 'system';
-                            const bgColor = isSystem ? '#fef3c7' : (isAdmin ? '#e0e7ff' : '#f8fafc');
-                            const textColor = isSystem ? '#92400e' : (isAdmin ? '#1e40af' : '#1e293b');
-                            const align = isSystem ? 'center' : (isAdmin ? 'left' : 'right');
-                            
-                            html += `
-                                <div style="margin-bottom: 16px; padding: 12px; background: ${bgColor}; border-radius: 12px; text-align: ${align};">
-                                    <strong style="color: ${textColor};">${isSystem ? '📢 System' : (isAdmin ? '👨‍💼 Admin' : '👤 Seller')}</strong>
-                                    <div style="font-size: 13px; margin-top: 6px;">${escapeHtml(msg.message)}</div>
-                                    <div style="font-size: 10px; color: #64748b; margin-top: 8px;">${msg.time}</div>
-                                </div>
-                            `;
-                        });
-                        document.getElementById('chatContent').innerHTML = html;
-                        document.getElementById('chatContent').scrollTop = document.getElementById('chatContent').scrollHeight;
-                    }
-                });
+        } catch (error) {
+            document.getElementById('chatMessages').innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to load messages</div>';
         }
-    }, 10000);
-}
-
-startChatRefresh();
-
-window.onclick = function(event) {
-    if (event.target.classList.contains('modal')) {
-        event.target.style.display = 'none';
     }
-}
-
-// Scroll chat to bottom when opened
-document.getElementById('chatModal').addEventListener('click', function() {
-    setTimeout(() => {
-        const chatContent = document.getElementById('chatContent');
-        if (chatContent) chatContent.scrollTop = chatContent.scrollHeight;
-    }, 100);
-});
+    
+    function startChatRefresh() {
+        if (chatRefreshInterval) clearInterval(chatRefreshInterval);
+        chatRefreshInterval = setInterval(() => {
+            if (currentNegotiationId && document.getElementById('chatModal').style.display === 'flex') {
+                loadChatMessages(currentNegotiationId);
+            }
+        }, 5000);
+    }
+    
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+        if (modalId === 'chatModal' && chatRefreshInterval) {
+            clearInterval(chatRefreshInterval);
+            currentNegotiationId = null;
+        }
+    }
+    
+    function formatMoney(amount) {
+        return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(amount) + ' ETB';
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    window.onclick = function(event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+            if (chatRefreshInterval) clearInterval(chatRefreshInterval);
+        }
+    }
 </script>
 
 <?php

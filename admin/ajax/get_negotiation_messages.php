@@ -21,22 +21,13 @@ if (!$negotiation_id) {
 
 $conn = getDbConnection();
 
-// Check if negotiation_messages table exists
-$table_check = $conn->query("SHOW TABLES LIKE 'negotiation_messages'");
-if ($table_check->num_rows == 0) {
-    echo json_encode(['success' => true, 'messages' => []]);
-    $conn->close();
-    exit;
-}
-
-// Get messages
 $result = $conn->query("
     SELECT nm.*, 
            CASE 
-               WHEN nm.sender_type = 'admin' THEN 'Admin'
-               WHEN nm.sender_type = 'seller' THEN 'Seller'
-               ELSE 'System'
-           END as sender_name
+               WHEN nm.sender_type = 'admin' THEN 'admin'
+               WHEN nm.sender_type = 'seller' THEN 'seller'
+               ELSE 'system'
+           END as sender_type
     FROM negotiation_messages nm
     WHERE nm.negotiation_id = $negotiation_id
     ORDER BY nm.created_at ASC
@@ -47,7 +38,6 @@ while ($row = $result->fetch_assoc()) {
     $messages[] = [
         'id' => $row['id'],
         'sender_type' => $row['sender_type'],
-        'sender_name' => $row['sender_name'],
         'message' => $row['message'],
         'time' => date('M d, H:i', strtotime($row['created_at']))
     ];
