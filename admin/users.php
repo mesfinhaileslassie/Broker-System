@@ -1,5 +1,5 @@
 <?php
-// admin/users.php - Users Management with Unban Button
+// admin/users.php - Users Management with Clean Table Design
 
 $page_title = 'User Management';
 ob_start();
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Delete user
     if (isset($_POST['delete_user'])) {
-        $conn->query("DELETE FROM users WHERE id = $userId AND role = 'user'");
+        $conn->query("DELETE FROM users WHERE id = $userId AND role != 'admin'");
         $message = "User deleted successfully";
     }
 }
@@ -39,7 +39,7 @@ $search = $_GET['search'] ?? '';
 $role = $_GET['role'] ?? '';
 $status = $_GET['status'] ?? '';
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
-$limit = 20;
+$limit = 15;
 $offset = ($page - 1) * $limit;
 
 $where = [];
@@ -66,80 +66,60 @@ $conn->close();
 ?>
 
 <style>
-    :root {
-        --primary: #4f46e5;
-        --primary-dark: #4338ca;
-        --primary-light: #eef2ff;
-        --success: #10b981;
-        --success-light: #d1fae5;
-        --warning: #f59e0b;
-        --warning-light: #fef3c7;
-        --danger: #ef4444;
-        --danger-light: #fee2e2;
-        --info: #3b82f6;
-        --info-light: #dbeafe;
-        --dark: #1e293b;
-        --gray: #64748b;
-        --gray-light: #f8fafc;
-        --border: #e2e8f0;
-        --card-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
-        --card-shadow-hover: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.02);
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
     }
     
-    .stats-grid {
+    body {
+        background: #f5f7fb;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Stats Grid */
+    .stats-container {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 1.5rem;
-        margin-bottom: 2rem;
+        gap: 1.25rem;
+        margin-bottom: 1.5rem;
     }
     
-    .stat-card {
+    .stat-box {
         background: white;
         border-radius: 1rem;
         padding: 1.25rem;
-        transition: all 0.3s ease;
-        border: 1px solid var(--border);
-        position: relative;
-        overflow: hidden;
+        border: 1px solid #e2e8f0;
+        transition: all 0.2s;
     }
     
-    .stat-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 4px;
-        height: 100%;
-        background: linear-gradient(135deg, var(--primary), #7c3aed);
+    .stat-box:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
     
-    .stat-card:hover {
-        transform: translateY(-3px);
-        box-shadow: var(--card-shadow-hover);
-    }
-    
-    .stat-value {
+    .stat-number {
         font-size: 1.75rem;
-        font-weight: 800;
-        color: var(--dark);
+        font-weight: 700;
+        color: #1e293b;
     }
     
     .stat-label {
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--gray);
+        font-size: 0.75rem;
+        color: #64748b;
         margin-top: 0.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
     }
     
-    /* Filters Bar */
-    .filters-bar {
+    /* Filters */
+    .filters-container {
         background: white;
-        border-radius: 1rem;
-        padding: 1rem 1.5rem;
+        border-radius: 0.75rem;
+        padding: 1rem 1.25rem;
         margin-bottom: 1.5rem;
-        border: 1px solid var(--border);
+        border: 1px solid #e2e8f0;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -147,73 +127,95 @@ $conn->close();
         gap: 1rem;
     }
     
-    .filter-group {
+    .filters-group {
         display: flex;
         gap: 0.75rem;
-        align-items: center;
         flex-wrap: wrap;
+        align-items: center;
     }
     
-    .filter-group input, .filter-group select {
+    .filter-input {
         padding: 0.5rem 1rem;
-        border: 1px solid var(--border);
-        border-radius: 2rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
         font-size: 0.8rem;
         background: white;
     }
     
-    .filter-group input:focus, .filter-group select:focus {
+    .filter-input:focus {
         outline: none;
-        border-color: var(--primary);
+        border-color: #4f46e5;
     }
     
-    .btn-filter {
-        padding: 0.5rem 1.25rem;
-        background: var(--primary);
+    .filter-select {
+        padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        font-size: 0.8rem;
+        background: white;
+        cursor: pointer;
+    }
+    
+    .btn-apply {
+        background: #4f46e5;
         color: white;
         border: none;
-        border-radius: 2rem;
-        cursor: pointer;
-        font-weight: 500;
+        padding: 0.5rem 1.25rem;
+        border-radius: 0.5rem;
         font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .btn-apply:hover {
+        background: #4338ca;
     }
     
     .btn-reset {
-        padding: 0.5rem 1.25rem;
-        background: var(--gray);
+        background: #64748b;
         color: white;
         border: none;
-        border-radius: 2rem;
-        text-decoration: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 0.5rem;
         font-size: 0.8rem;
+        font-weight: 500;
+        text-decoration: none;
+        display: inline-block;
     }
     
-    /* User Table */
-    .table-card {
+    .btn-reset:hover {
+        background: #475569;
+    }
+    
+    /* Table Card */
+    .table-container {
         background: white;
         border-radius: 1rem;
+        border: 1px solid #e2e8f0;
         overflow: hidden;
-        border: 1px solid var(--border);
     }
     
     .table-header {
-        padding: 1rem 1.5rem;
-        background: var(--gray-light);
-        border-bottom: 1px solid var(--border);
+        padding: 1rem 1.25rem;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
-        gap: 1rem;
+        gap: 0.5rem;
     }
     
-    .table-header h2 {
+    .table-header h3 {
         font-size: 1rem;
-        font-weight: 700;
-        color: var(--dark);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .table-header span {
+        font-size: 0.75rem;
+        color: #64748b;
     }
     
     .table-wrapper {
@@ -223,26 +225,43 @@ $conn->close();
     table {
         width: 100%;
         border-collapse: collapse;
-    }
-    
-    th, td {
-        padding: 1rem 1rem;
-        text-align: left;
-        border-bottom: 1px solid var(--border);
         font-size: 0.8rem;
     }
     
     th {
+        text-align: left;
+        padding: 0.875rem 1rem;
+        background: #fafcff;
         font-weight: 600;
-        color: var(--gray);
-        background: var(--gray-light);
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        color: #475569;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    td {
+        padding: 0.875rem 1rem;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
     }
     
     tr:hover {
-        background: var(--gray-light);
+        background: #f8fafc;
+    }
+    
+    /* User Cell */
+    .user-cell {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .user-name {
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
+    .user-id {
+        font-size: 0.7rem;
+        color: #94a3b8;
+        margin-top: 0.125rem;
     }
     
     /* Badges */
@@ -250,73 +269,139 @@ $conn->close();
         display: inline-flex;
         align-items: center;
         gap: 0.25rem;
-        padding: 0.25rem 0.75rem;
-        border-radius: 2rem;
+        padding: 0.25rem 0.625rem;
+        border-radius: 1.5rem;
         font-size: 0.7rem;
-        font-weight: 600;
-    }
-    
-    .badge-active { background: var(--success-light); color: #065f46; }
-    .badge-banned { background: var(--danger-light); color: #991b1b; }
-    .badge-company { background: var(--info-light); color: #1e40af; }
-    .badge-user { background: #f1f5f9; color: #475569; }
-    .badge-admin { background: linear-gradient(135deg, var(--primary), #7c3aed); color: white; }
-    
-    /* Buttons */
-    .btn-sm {
-        padding: 0.35rem 0.85rem;
-        font-size: 0.7rem;
-        border-radius: 2rem;
-        border: none;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
         font-weight: 500;
     }
     
-    .btn-view { background: var(--info); color: white; }
-    .btn-ban { background: var(--danger); color: white; }
-    .btn-unban { background: var(--success); color: white; }
-    .btn-delete { background: #dc2626; color: white; }
-    .btn-edit { background: var(--warning); color: white; }
-    
-    .btn-sm:hover {
-        transform: translateY(-1px);
-        filter: brightness(0.95);
+    .badge-active {
+        background: #d1fae5;
+        color: #065f46;
     }
     
-    /* Action Group */
-    .action-group {
+    .badge-banned {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    .badge-admin {
+        background: #e0e7ff;
+        color: #4338ca;
+    }
+    
+    .badge-company {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+    
+    .badge-user {
+        background: #f1f5f9;
+        color: #475569;
+    }
+    
+    /* Role Badge Special */
+    .role-admin {
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+    }
+    
+    /* Action Buttons */
+    .action-buttons {
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
     }
     
+    .action-btn {
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .action-view {
+        background: #3b82f6;
+        color: white;
+    }
+    
+    .action-view:hover {
+        background: #2563eb;
+    }
+    
+    .action-ban {
+        background: #ef4444;
+        color: white;
+    }
+    
+    .action-ban:hover {
+        background: #dc2626;
+    }
+    
+    .action-unban {
+        background: #10b981;
+        color: white;
+    }
+    
+    .action-unban:hover {
+        background: #059669;
+    }
+    
+    .action-delete {
+        background: #dc2626;
+        color: white;
+    }
+    
+    .action-delete:hover {
+        background: #b91c1c;
+    }
+    
     /* Pagination */
     .pagination {
-        padding: 1rem 1.5rem;
-        border-top: 1px solid var(--border);
+        padding: 1rem 1.25rem;
+        border-top: 1px solid #e2e8f0;
         display: flex;
         justify-content: center;
         gap: 0.5rem;
         flex-wrap: wrap;
     }
     
-    .pagination a, .pagination span {
-        padding: 0.4rem 0.8rem;
+    .page-link {
+        padding: 0.375rem 0.75rem;
         border-radius: 0.5rem;
         text-decoration: none;
-        color: var(--dark);
+        color: #475569;
         font-size: 0.8rem;
-        border: 1px solid var(--border);
+        border: 1px solid #e2e8f0;
+        transition: all 0.2s;
     }
     
-    .pagination a:hover, .pagination .active {
-        background: var(--primary);
+    .page-link:hover, .page-link.active {
+        background: #4f46e5;
         color: white;
-        border-color: var(--primary);
+        border-color: #4f46e5;
+    }
+    
+    /* Alert */
+    .alert {
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        margin-bottom: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+        border-left: 3px solid #10b981;
     }
     
     /* Modal */
@@ -328,7 +413,6 @@ $conn->close();
         width: 100%;
         height: 100%;
         background: rgba(0,0,0,0.5);
-        backdrop-filter: blur(4px);
         align-items: center;
         justify-content: center;
         z-index: 1000;
@@ -336,151 +420,203 @@ $conn->close();
     
     .modal-content {
         background: white;
-        border-radius: 1.5rem;
-        padding: 1.75rem;
-        width: 450px;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        width: 420px;
         max-width: 90%;
-        animation: modalIn 0.3s ease;
-    }
-    
-    @keyframes modalIn {
-        from { opacity: 0; transform: scale(0.95); }
-        to { opacity: 1; transform: scale(1); }
     }
     
     .modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1.25rem;
+        margin-bottom: 1rem;
     }
     
     .modal-header h3 {
-        font-size: 1.25rem;
+        font-size: 1.125rem;
         font-weight: 700;
-        color: var(--dark);
     }
     
     .close-modal {
         cursor: pointer;
-        font-size: 1.5rem;
-        color: var(--gray);
-    }
-    
-    .close-modal:hover {
-        color: var(--danger);
+        font-size: 1.25rem;
+        color: #94a3b8;
     }
     
     .form-group {
-        margin-bottom: 1.25rem;
+        margin-bottom: 1rem;
     }
     
     .form-group label {
         display: block;
-        margin-bottom: 0.5rem;
-        font-weight: 600;
+        margin-bottom: 0.375rem;
+        font-weight: 500;
         font-size: 0.8rem;
     }
     
     .form-group textarea {
         width: 100%;
-        padding: 0.75rem;
-        border: 1px solid var(--border);
-        border-radius: 0.75rem;
+        padding: 0.625rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
         resize: vertical;
     }
     
-    .alert {
-        padding: 0.75rem 1rem;
-        border-radius: 0.75rem;
-        margin-bottom: 1.25rem;
-        display: flex;
+    /* View Modal */
+    .view-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
         align-items: center;
-        gap: 0.5rem;
+        justify-content: center;
+        z-index: 1000;
     }
     
-    .alert-success {
-        background: var(--success-light);
-        color: #065f46;
+    .view-modal-content {
+        background: white;
+        border-radius: 1rem;
+        width: 520px;
+        max-width: 90%;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+    
+    .view-modal-header {
+        padding: 1rem 1.25rem;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+        border-radius: 1rem 1rem 0 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .view-modal-body {
+        padding: 1.25rem;
+    }
+    
+    .profile-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .profile-avatar {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: white;
+    }
+    
+    .info-row {
+        display: flex;
+        padding: 0.625rem 0;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    
+    .info-label {
+        width: 110px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #64748b;
+    }
+    
+    .info-value {
+        flex: 1;
+        font-size: 0.8rem;
+        color: #1e293b;
+        font-weight: 500;
     }
     
     .empty-state {
         text-align: center;
         padding: 3rem;
+        color: #94a3b8;
     }
     
     @media (max-width: 768px) {
-        .stats-grid {
+        .stats-container {
             grid-template-columns: repeat(2, 1fr);
-            gap: 1rem;
         }
-        .filters-bar {
+        .filters-container {
             flex-direction: column;
             align-items: stretch;
         }
-        .filter-group {
+        .filters-group {
             justify-content: center;
         }
-        .action-group {
+        .action-buttons {
             flex-direction: column;
-            align-items: center;
         }
-        .btn-sm {
-            width: 100%;
+        .action-btn {
             justify-content: center;
         }
         th, td {
-            padding: 0.75rem;
+            padding: 0.625rem;
         }
     }
 </style>
 
-<!-- Statistics Cards -->
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-value"><?php echo number_format($stats['total']); ?></div>
-        <div class="stat-label">Total Users</div>
+<!-- Stats -->
+<div class="stats-container">
+    <div class="stat-box">
+        <div class="stat-number"><?php echo number_format($stats['total']); ?></div>
+        <div class="stat-label"><i class="fas fa-users"></i> Total Users</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value"><?php echo number_format($stats['active']); ?></div>
-        <div class="stat-label">Active</div>
+    <div class="stat-box">
+        <div class="stat-number"><?php echo number_format($stats['active']); ?></div>
+        <div class="stat-label"><i class="fas fa-check-circle"></i> Active</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value"><?php echo number_format($stats['banned']); ?></div>
-        <div class="stat-label">Banned</div>
+    <div class="stat-box">
+        <div class="stat-number"><?php echo number_format($stats['banned']); ?></div>
+        <div class="stat-label"><i class="fas fa-ban"></i> Banned</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-value"><?php echo number_format($stats['companies']); ?></div>
-        <div class="stat-label">Companies</div>
+    <div class="stat-box">
+        <div class="stat-number"><?php echo number_format($stats['companies']); ?></div>
+        <div class="stat-label"><i class="fas fa-building"></i> Companies</div>
     </div>
 </div>
 
-<!-- Filters Bar -->
-<div class="filters-bar">
-    <form method="GET" class="filter-group">
-        <input type="text" name="search" placeholder="Search by name, email..." value="<?php echo htmlspecialchars($search); ?>">
-        <select name="role">
+<!-- Filters -->
+<div class="filters-container">
+    <form method="GET" class="filters-group">
+        <input type="text" name="search" class="filter-input" placeholder="Search name, email..." value="<?php echo htmlspecialchars($search); ?>">
+        <select name="role" class="filter-select">
             <option value="">All Roles</option>
             <option value="user" <?php echo $role == 'user' ? 'selected' : ''; ?>>User</option>
             <option value="company" <?php echo $role == 'company' ? 'selected' : ''; ?>>Company</option>
             <option value="admin" <?php echo $role == 'admin' ? 'selected' : ''; ?>>Admin</option>
         </select>
-        <select name="status">
+        <select name="status" class="filter-select">
             <option value="">All Status</option>
             <option value="active" <?php echo $status == 'active' ? 'selected' : ''; ?>>Active</option>
             <option value="banned" <?php echo $status == 'banned' ? 'selected' : ''; ?>>Banned</option>
         </select>
-        <button type="submit" class="btn-filter">Apply Filter</button>
+        <button type="submit" class="btn-apply"><i class="fas fa-filter"></i> Apply</button>
     </form>
-    <div class="filter-group">
-        <a href="users.php" class="btn-reset">Reset All</a>
+    <div>
+        <a href="users.php" class="btn-reset"><i class="fas fa-undo"></i> Reset</a>
     </div>
 </div>
 
 <!-- Users Table -->
-<div class="table-card">
+<div class="table-container">
     <div class="table-header">
-        <h2><i class="fas fa-users"></i> All Users</h2>
+        <h3><i class="fas fa-users"></i> All Users</h3>
         <span><?php echo number_format($total); ?> users found</span>
     </div>
     <div class="table-wrapper">
@@ -502,17 +638,21 @@ $conn->close();
                     <?php while($row = $users->fetch_assoc()): ?>
                     <tr>
                         <td>
-                            <strong><?php echo htmlspecialchars($row['full_name']); ?></strong><br>
-                            <small>ID: #<?php echo $row['id']; ?></small>
+                            <div class="user-cell">
+                                <span class="user-name"><?php echo htmlspecialchars($row['full_name']); ?></span>
+                                <span class="user-id">ID: #<?php echo $row['id']; ?></span>
+                            </div>
                         </td>
                         <td><?php echo htmlspecialchars($row['email']); ?></td>
                         <td><?php echo htmlspecialchars($row['phone'] ?? '-'); ?></td>
                         <td>
-                            <span class="badge <?php 
-                                echo $row['role'] == 'admin' ? 'badge-admin' : ($row['role'] == 'company' ? 'badge-company' : 'badge-user'); 
-                            ?>">
-                                <?php echo ucfirst($row['role']); ?>
-                            </span>
+                            <?php if($row['role'] == 'admin'): ?>
+                                <span class="badge role-admin"><i class="fas fa-shield-alt"></i> Admin</span>
+                            <?php elseif($row['role'] == 'company'): ?>
+                                <span class="badge badge-company"><i class="fas fa-building"></i> Company</span>
+                            <?php else: ?>
+                                <span class="badge badge-user"><i class="fas fa-user"></i> User</span>
+                            <?php endif; ?>
                         </td>
                         <td><strong><?php echo formatMoney($row['balance']); ?></strong></td>
                         <td>
@@ -524,28 +664,28 @@ $conn->close();
                         </td>
                         <td><?php echo date('M d, Y', strtotime($row['created_at'])); ?></td>
                         <td>
-                            <div class="action-group">
-                                <a href="users.php?view=<?php echo $row['id']; ?>" class="btn-sm btn-view" title="View Details">
+                            <div class="action-buttons">
+                                <button onclick="viewUser(<?php echo $row['id']; ?>)" class="action-btn action-view" title="View Details">
                                     <i class="fas fa-eye"></i> View
-                                </a>
+                                </button>
                                 
                                 <?php if ($row['role'] != 'admin'): ?>
                                     <?php if ($row['is_suspended']): ?>
                                         <form method="POST" style="display: inline;">
                                             <input type="hidden" name="user_id" value="<?php echo $row['id']; ?>">
-                                            <button type="submit" name="unban_user" class="btn-sm btn-unban" onclick="return confirm('Unban this user?')" title="Unban User">
+                                            <button type="submit" name="unban_user" class="action-btn action-unban" onclick="return confirm('Unban this user?')" title="Unban">
                                                 <i class="fas fa-check-circle"></i> Unban
                                             </button>
                                         </form>
                                     <?php else: ?>
-                                        <button onclick="banUser(<?php echo $row['id']; ?>)" class="btn-sm btn-ban" title="Ban User">
+                                        <button onclick="banUser(<?php echo $row['id']; ?>)" class="action-btn action-ban" title="Ban">
                                             <i class="fas fa-ban"></i> Ban
                                         </button>
                                     <?php endif; ?>
                                     
                                     <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this user? This action cannot be undone.')">
                                         <input type="hidden" name="user_id" value="<?php echo $row['id']; ?>">
-                                        <button type="submit" name="delete_user" class="btn-sm btn-delete" title="Delete User">
+                                        <button type="submit" name="delete_user" class="action-btn action-delete" title="Delete">
                                             <i class="fas fa-trash"></i> Delete
                                         </button>
                                     </form>
@@ -558,8 +698,8 @@ $conn->close();
             </table>
         <?php else: ?>
             <div class="empty-state">
-                <i class="fas fa-users" style="font-size: 3rem; color: #cbd5e1; margin-bottom: 1rem; display: block;"></i>
-                <p style="color: var(--gray);">No users found</p>
+                <i class="fas fa-users" style="font-size: 3rem; margin-bottom: 1rem; display: block;"></i>
+                <p>No users found</p>
             </div>
         <?php endif; ?>
     </div>
@@ -568,12 +708,27 @@ $conn->close();
     <div class="pagination">
         <?php for ($i = 1; $i <= $totalPages; $i++): ?>
             <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($role); ?>&status=<?php echo urlencode($status); ?>" 
-               class="<?php echo $i == $page ? 'active' : ''; ?>">
+               class="page-link <?php echo $i == $page ? 'active' : ''; ?>">
                 <?php echo $i; ?>
             </a>
         <?php endfor; ?>
     </div>
     <?php endif; ?>
+</div>
+
+<!-- View User Modal -->
+<div id="viewUserModal" class="view-modal">
+    <div class="view-modal-content">
+        <div class="view-modal-header">
+            <h3><i class="fas fa-user-circle"></i> User Profile</h3>
+            <span class="close-modal" onclick="closeViewModal()">&times;</span>
+        </div>
+        <div class="view-modal-body" id="viewUserContent">
+            <div style="text-align: center; padding: 2rem;">
+                <i class="fas fa-spinner fa-spin"></i> Loading...
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Ban Modal -->
@@ -587,9 +742,9 @@ $conn->close();
             <input type="hidden" name="user_id" id="banUserId">
             <div class="form-group">
                 <label>Reason for Banning</label>
-                <textarea name="ban_reason" rows="4" required placeholder="Enter reason for banning this user..."></textarea>
+                <textarea name="ban_reason" rows="3" required placeholder="Enter reason for banning this user..."></textarea>
             </div>
-            <button type="submit" name="ban_user" class="btn-sm btn-ban" style="width: 100%; padding: 0.75rem;">
+            <button type="submit" name="ban_user" class="action-btn action-ban" style="width: 100%; padding: 0.625rem;">
                 <i class="fas fa-ban"></i> Ban User
             </button>
         </form>
@@ -597,18 +752,146 @@ $conn->close();
 </div>
 
 <script>
+function viewUser(userId) {
+    const modal = document.getElementById('viewUserModal');
+    const content = document.getElementById('viewUserContent');
+    
+    modal.style.display = 'flex';
+    content.innerHTML = '<div style="text-align: center; padding: 2rem;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+    
+    fetch(`ajax/get_user_details.php?id=${userId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const user = data.user;
+                const isBanned = user.is_suspended == 1;
+                
+                content.innerHTML = `
+                    <div class="profile-row">
+                        <div class="profile-avatar">${user.full_name.charAt(0).toUpperCase()}</div>
+                        <div>
+                            <h3 style="margin-bottom: 0.25rem;">${escapeHtml(user.full_name)}</h3>
+                            <p style="font-size: 0.7rem; color: #64748b;"><i class="fas fa-calendar-alt"></i> Member since ${new Date(user.created_at).toLocaleDateString()}</p>
+                            <span class="badge ${isBanned ? 'badge-banned' : 'badge-active'}">
+                                ${isBanned ? '<i class="fas fa-ban"></i> Banned' : '<i class="fas fa-check-circle"></i> Active'}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-envelope"></i> Email</div>
+                        <div class="info-value">${escapeHtml(user.email)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-phone"></i> Phone</div>
+                        <div class="info-value">${user.phone || '<span style="color: #94a3b8;">Not provided</span>'}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-tag"></i> Role</div>
+                        <div class="info-value">${user.role.charAt(0).toUpperCase() + user.role.slice(1)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-map-marker-alt"></i> Address</div>
+                        <div class="info-value">${user.address || '<span style="color: #94a3b8;">Not provided</span>'}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-city"></i> City</div>
+                        <div class="info-value">${user.city || '<span style="color: #94a3b8;">Not provided</span>'}</div>
+                    </div>
+                    ${user.bio ? `
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-align-left"></i> Bio</div>
+                        <div class="info-value">${escapeHtml(user.bio)}</div>
+                    </div>
+                    ` : ''}
+                    ${user.ban_reason ? `
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-exclamation-triangle"></i> Ban Reason</div>
+                        <div class="info-value" style="color: #dc2626;">${escapeHtml(user.ban_reason)}</div>
+                    </div>
+                    ` : ''}
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-wallet"></i> Balance</div>
+                        <div class="info-value">${formatMoney(user.balance)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-box"></i> Listings</div>
+                        <div class="info-value">${user.total_listings || 0}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label"><i class="fas fa-exchange-alt"></i> Transactions</div>
+                        <div class="info-value">${user.total_transactions || 0}</div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
+                        ${!isBanned && user.role != 'admin' ? `
+                            <button onclick="banUser(${user.id})" class="action-btn action-ban">
+                                <i class="fas fa-ban"></i> Ban User
+                            </button>
+                        ` : isBanned ? `
+                            <form method="POST" style="display: inline;">
+                                <input type="hidden" name="user_id" value="${user.id}">
+                                <button type="submit" name="unban_user" class="action-btn action-unban">
+                                    <i class="fas fa-check-circle"></i> Unban User
+                                </button>
+                            </form>
+                        ` : ''}
+                        ${user.role != 'admin' ? `
+                            <form method="POST" style="display: inline;" onsubmit="return confirm('Delete this user?')">
+                                <input type="hidden" name="user_id" value="${user.id}">
+                                <button type="submit" name="delete_user" class="action-btn action-delete">
+                                    <i class="fas fa-trash"></i> Delete User
+                                </button>
+                            </form>
+                        ` : ''}
+                        <a href="chat.php?user=${user.id}" class="action-btn action-view">
+                            <i class="fas fa-comment"></i> Send Message
+                        </a>
+                        <button onclick="closeViewModal()" class="action-btn" style="background: #64748b; color: white;">
+                            <i class="fas fa-times"></i> Close
+                        </button>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `<div style="text-align: center; padding: 2rem; color: #dc2626;">Failed to load user details</div>`;
+            }
+        })
+        .catch(error => {
+            content.innerHTML = `<div style="text-align: center; padding: 2rem; color: #dc2626;">Error loading user details</div>`;
+        });
+}
+
+function closeViewModal() {
+    document.getElementById('viewUserModal').style.display = 'none';
+}
+
 function banUser(id) { 
     document.getElementById('banUserId').value = id; 
     document.getElementById('banModal').style.display = 'flex'; 
+    closeViewModal();
 }
 
 function closeBanModal() { 
     document.getElementById('banModal').style.display = 'none'; 
 }
 
+function formatMoney(amount) {
+    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(amount) + ' ETB';
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 window.onclick = function(event) { 
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none'; 
+    }
+    if (event.target.classList.contains('view-modal')) {
+        event.target.style.display = 'none';
     }
 }
 </script>
