@@ -1,9 +1,14 @@
 <?php
-// includes/chat_functions.php - Complete chat system functions
+// includes/chat_functions.php - Complete Fixed Version
 
 require_once __DIR__ . '/../config/database.php';
 
 function getOrCreateConversation($conn, $user_id, $broker_id) {
+    // Prevent creating conversation with self
+    if ($user_id == $broker_id) {
+        return false;
+    }
+    
     // Check if conversation exists
     $stmt = $conn->prepare("SELECT id FROM conversations WHERE (user_id = ? AND broker_id = ?) OR (user_id = ? AND broker_id = ?)");
     $stmt->bind_param("iiii", $user_id, $broker_id, $broker_id, $user_id);
@@ -21,6 +26,11 @@ function getOrCreateConversation($conn, $user_id, $broker_id) {
     // Ensure one is user and one is broker/admin
     $actual_user_id = ($user_role == 'user') ? $user_id : $broker_id;
     $actual_broker_id = ($broker_role == 'admin' || $broker_role == 'broker') ? $broker_id : $user_id;
+    
+    // Don't create if both are same
+    if ($actual_user_id == $actual_broker_id) {
+        return false;
+    }
     
     $stmt = $conn->prepare("INSERT INTO conversations (user_id, broker_id, created_at, updated_at) VALUES (?, ?, NOW(), NOW())");
     $stmt->bind_param("ii", $actual_user_id, $actual_broker_id);
@@ -41,6 +51,11 @@ function getUserRole($conn, $user_id) {
 }
 
 function sendMessage($conn, $conversation_id, $sender_id, $receiver_id, $message) {
+    // Don't send if sender and receiver are same
+    if ($sender_id == $receiver_id) {
+        return false;
+    }
+    
     $message = trim($message);
     if (empty($message)) return false;
     
@@ -225,10 +240,12 @@ function getUserConversations($conn, $user_id) {
             FROM conversations c
             JOIN users u ON c.user_id = u.id
             WHERE c.broker_id = ? AND c.status = 'active'
+              AND u.role = 'user'
+              AND u.id != ?
             ORDER BY c.updated_at DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $user_id);
+        $stmt->bind_param("ii", $user_id, $user_id);
     } else {
         $sql = "
             SELECT c.*, 
@@ -237,14 +254,18 @@ function getUserConversations($conn, $user_id) {
             FROM conversations c
             JOIN users u ON c.broker_id = u.id
             WHERE c.user_id = ? AND c.status = 'active'
+              AND u.role IN ('admin', 'broker')
+              AND u.id != ?
             ORDER BY c.updated_at DESC
         ";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $user_id);
+        $stmt->bind_param("ii", $user_id, $user_id);
     }
     
     $stmt->execute();
-    return $stmt->get_result();
+    $result = $stmt->get_result();
+    
+    return $result;
 }
 
 function getUnreadMessageCount($conn, $user_id) {
@@ -261,21 +282,42 @@ function getUnreadMessageCount($conn, $user_id) {
 }
 
 function getConversationById($conn, $conversation_id, $user_id) {
-    $stmt = $conn->prepare("
-        SELECT c.*, 
-               CASE WHEN c.broker_id = ? THEN u.full_name ELSE u2.full_name END as other_user_name,
-               CASE WHEN c.broker_id = ? THEN u.id ELSE u2.id END as other_user_id
-        FROM conversations c
-        JOIN users u ON c.user_id = u.id
-        JOIN users u2 ON c.broker_id = u2.id
-        WHERE c.id = ? AND (c.user_id = ? OR c.broker_id = ?)
-    ");
-    $stmt->bind_param("iiiii", $user_id, $user_id, $conversation_id, $user_id, $user_id);
+    $user_role = getUserRole($conn, $user_id);
+    
+    if ($user_role == 'admin' || $user_role == 'broker') {
+        $stmt = $conn->prepare("
+            SELECT c.*, 
+                   u.id as other_user_id, u.full_name as other_user_name, u.email as other_user_email,
+                   CASE WHEN c.broker_unread_count > 0 THEN c.broker_unread_count ELSE 0 END as unread_count
+            FROM conversations c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.id = ? AND c.broker_id = ? AND c.status = 'active'
+              AND u.role = 'user'
+        ");
+        $stmt->bind_param("ii", $conversation_id, $user_id);
+    } else {
+        $stmt = $conn->prepare("
+            SELECT c.*, 
+                   u.id as other_user_id, u.full_name as other_user_name, u.email as other_user_email,
+                   CASE WHEN c.user_unread_count > 0 THEN c.user_unread_count ELSE 0 END as unread_count
+            FROM conversations c
+            JOIN users u ON c.broker_id = u.id
+            WHERE c.id = ? AND c.user_id = ? AND c.status = 'active'
+              AND u.role IN ('admin', 'broker')
+        ");
+        $stmt->bind_param("ii", $conversation_id, $user_id);
+    }
+    
     $stmt->execute();
     $result = $stmt->get_result();
     
     if ($result->num_rows > 0) {
-        return $result->fetch_assoc();
+        $conversation = $result->fetch_assoc();
+        // Don't return conversation if it's with self
+        if ($conversation['other_user_id'] == $user_id) {
+            return null;
+        }
+        return $conversation;
     }
     return null;
 }
