@@ -1,0 +1,22 @@
+2026-05-10 14:07:12 - ========== NEW PAYMENT ATTEMPT ==========
+2026-05-10 14:07:12 - Transaction ID: 65
+2026-05-10 14:07:12 - User ID: 5, Transaction ID: 65
+2026-05-10 14:07:12 - ERROR: Transaction not found! ID: 65
+2026-06-01 12:15:33 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-01 12:15:33 - Transaction ID: 67
+2026-06-01 12:15:33 - User ID: 18, Transaction ID: 67
+2026-06-01 12:15:33 - Transaction found: FNL car
+2026-06-01 12:15:33 - Seller ID: 5
+2026-06-01 12:15:33 - Seller Name: Mesfin Haileslassie
+2026-06-01 12:15:33 - Payment amounts - Deposit: 1260000, Commission: 630000, Total: 1890000
+2026-06-01 12:15:33 - Existing payment code found: 93745
+2026-06-01 12:15:33 - Page rendering completed
+2026-06-01 12:15:44 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-01 12:15:44 - Transaction ID: 67
+2026-06-01 12:15:44 - User ID: 18, Transaction ID: 67
+2026-06-01 12:15:44 - Transaction found: FNL car
+2026-06-01 12:15:44 - Seller ID: 5
+2026-06-01 12:15:44 - Seller Name: Mesfin Haileslassie
+2026-06-01 12:15:44 - Payment amounts - Deposit: 1260000, Commission: 630000, Total: 1890000
+2026-06-01 12:15:44 - Existing payment code found: 93745
+2026-06-01 12:15:44 - Page rendering completed

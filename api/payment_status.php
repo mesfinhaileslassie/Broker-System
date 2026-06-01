@@ -40,10 +40,10 @@ $result = $conn->query("
         UNIX_TIMESTAMP(pc.expires_at) as expires_timestamp,
         TIMESTAMPDIFF(SECOND, NOW(), pc.expires_at) as seconds_remaining,
         
-        -- Check if payment exists and is confirmed
+        pc.type as payment_code_type,
+        -- Check if payment exists and is confirmed (any type for this code)
         EXISTS(SELECT 1 FROM payments p 
                WHERE p.telebirr_code_5digit = pc.code 
-               AND p.type = 'deposit_seller' 
                AND p.status = 'confirmed') as is_paid,
         
         -- Check if listing is active
@@ -96,7 +96,12 @@ $response = [
 ];
 
 // Determine payment status
-if ($is_paid && $is_active) {
+$code_type = $data['payment_code_type'] ?? 'deposit_seller';
+
+if ($is_paid && $code_type === 'remaining_balance') {
+    $response['payment_status'] = 'fully_paid';
+    $response['message'] = 'Remaining balance payment confirmed';
+} elseif ($is_paid && $is_active) {
     $response['payment_status'] = 'confirmed_activated';
     $response['message'] = 'Payment confirmed and listing activated';
 } elseif ($is_paid && !$is_active) {

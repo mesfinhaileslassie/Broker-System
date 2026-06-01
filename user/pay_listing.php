@@ -56,7 +56,8 @@ if (!$transaction) {
         INSERT INTO transactions (listing_id, buyer_id, seller_id, total_amount, deposit_amount, commission_amount, remaining_balance, status, created_at) 
         VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_seller_deposit', NOW())
     ");
-    $stmt->bind_param("iiiiddd", $listing_id, $user_id, $user_id, $price, $deposit_amount, $commission_amount, $price);
+    $remaining_after_deposit = max(0, round($price - $deposit_amount, 2));
+    $stmt->bind_param("iiiiddd", $listing_id, $user_id, $user_id, $price, $deposit_amount, $commission_amount, $remaining_after_deposit);
     $stmt->execute();
     $transaction_id = $conn->insert_id;
 } else {
@@ -518,6 +519,22 @@ $conn->close();
             </div>
         </div>
         
+        <div style="margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 16px; border: 1px dashed #cbd5e1;">
+            <p style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">
+                <i class="fas fa-check-double"></i> Paid in Telebirr? Confirm here
+            </p>
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">After paying, enter test PIN <strong>1234</strong> and click confirm.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <input type="password" id="confirmPin" value="1234" maxlength="4" placeholder="PIN"
+                    style="flex:1;min-width:100px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;">
+                <button type="button" id="confirmPayBtn" onclick="confirmPaymentManually()"
+                    style="padding:10px 20px;background:#10b981;color:#fff;border:none;border-radius:40px;font-weight:600;cursor:pointer;">
+                    Confirm Payment
+                </button>
+            </div>
+            <p id="confirmPayError" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></p>
+        </div>
+
         <div class="payment-status" id="paymentStatus">
             <div class="spinner"></div>
             <p style="margin-top: 16px; font-weight: 500;">Loading payment information...</p>
@@ -739,6 +756,38 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+async function confirmPaymentManually() {
+    const btn = document.getElementById('confirmPayBtn');
+    const errEl = document.getElementById('confirmPayError');
+    const pin = document.getElementById('confirmPin').value.trim();
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Confirming...';
+
+    try {
+        const res = await fetch('/broker_system/api/confirm_payment.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ payment_code: paymentCode, pin: pin })
+        });
+        const data = await res.json();
+        if (data.success) {
+            pollBackendStatus();
+        } else {
+            errEl.textContent = data.error || 'Confirmation failed';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = 'Confirm Payment';
+        }
+    } catch (e) {
+        errEl.textContent = 'Network error. Try again.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.innerHTML = 'Confirm Payment';
+    }
+}
 
 // Start the application
 startPaymentDetection();

@@ -96,52 +96,16 @@ function processBuyerPayment($conn, $transaction_id, $buyer_id, $amount, $paymen
  * Mark delivery by seller
  */
 function markDelivery($conn, $transaction_id, $seller_id, $delivery_notes = '') {
-    $transaction = $conn->query("
-        SELECT t.*, l.type 
-        FROM transactions t
-        JOIN listings l ON t.listing_id = l.id
-        WHERE t.id = $transaction_id AND t.seller_id = $seller_id
-    ")->fetch_assoc();
-    
-    if (!$transaction) {
-        return ['success' => false, 'error' => 'Transaction not found'];
-    }
-    
-    $conn->query("
-        UPDATE transactions 
-        SET delivery_status = 'delivered',
-            delivered_at = NOW(),
-            status = 'in_progress',
-            updated_at = NOW()
-        WHERE id = $transaction_id
-    ");
-    
-    addTransactionTimeline($conn, $transaction_id, 'delivered', 
-        "Seller marked as delivered: " . ($delivery_notes ?: 'Item/service delivered'), $seller_id);
-    
-    return ['success' => true];
+    require_once __DIR__ . '/transaction_workflow.php';
+    return markSellerConfirmed($conn, $transaction_id, $seller_id, $delivery_notes);
 }
 
 /**
  * Confirm receipt by buyer and release payment
  */
 function confirmReceiptAndRelease($conn, $transaction_id, $buyer_id, $notes = '') {
-    $transaction = $conn->query("
-        SELECT t.*, l.title, l.seller_id, l.type
-        FROM transactions t
-        JOIN listings l ON t.listing_id = l.id
-        WHERE t.id = $transaction_id AND t.buyer_id = $buyer_id
-    ")->fetch_assoc();
-    
-    if (!$transaction) {
-        return ['success' => false, 'error' => 'Transaction not found'];
-    }
-    
-    if ($transaction['delivery_status'] != 'delivered' && $transaction['type'] != 'job') {
-        return ['success' => false, 'error' => 'Seller has not marked delivery yet'];
-    }
-    
-    return releaseEscrowPayment($conn, $transaction_id, $buyer_id, 'buyer', $notes);
+    require_once __DIR__ . '/transaction_workflow.php';
+    return markBuyerConfirmed($conn, $transaction_id, $buyer_id, $notes);
 }
 
 /**
@@ -157,6 +121,19 @@ function releaseEscrowPayment($conn, $transaction_id, $released_by, $released_by
     
     if (!$transaction) {
         return ['success' => false, 'error' => 'Transaction not found'];
+    }
+
+    if (($transaction['status'] ?? '') === 'disputed') {
+        return ['success' => false, 'error' => 'Cannot release funds while disputed'];
+    }
+
+    if ($released_by_type !== 'admin' && $released_by_type !== 'system' && $released_by_type !== 'dual_confirm') {
+        $seller_ok = (int) ($transaction['seller_confirmed'] ?? 0) === 1
+            || ($transaction['delivery_status'] ?? '') === 'delivered';
+        $buyer_ok = (int) ($transaction['buyer_confirmed'] ?? 0) === 1;
+        if (!$seller_ok || !$buyer_ok) {
+            return ['success' => false, 'error' => 'Both seller and buyer must confirm before release'];
+        }
     }
     
     $release_amount = $transaction['total_amount'] - $transaction['commission_amount'];
@@ -240,7 +217,8 @@ function releaseEscrowPayment($conn, $transaction_id, $released_by, $released_by
  */
 function processAutoReleaseQueue($conn) {
     $pending_releases = $conn->query("
-        SELECT eq.*, t.total_amount, t.commission_amount, t.seller_id
+        SELECT eq.*, t.total_amount, t.commission_amount, t.seller_id,
+               t.seller_confirmed, t.buyer_confirmed, t.delivery_status
         FROM escrow_release_queue eq
         JOIN transactions t ON eq.transaction_id = t.id
         WHERE eq.status = 'pending' 
@@ -251,8 +229,14 @@ function processAutoReleaseQueue($conn) {
     
     $released_count = 0;
     while ($release = $pending_releases->fetch_assoc()) {
-        $result = releaseEscrowPayment($conn, $release['transaction_id'], 0, 'system', 
-            "Auto-release after escrow period expired");
+        $seller_ok = (int) ($release['seller_confirmed'] ?? 0) === 1
+            || ($release['delivery_status'] ?? '') === 'delivered';
+        $buyer_ok = (int) ($release['buyer_confirmed'] ?? 0) === 1;
+        if (!$seller_ok || !$buyer_ok) {
+            continue;
+        }
+        $result = releaseEscrowPayment($conn, $release['transaction_id'], 0, 'system',
+            "Auto-release after escrow period expired and both parties confirmed");
         if ($result['success']) {
             $released_count++;
         }

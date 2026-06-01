@@ -4,6 +4,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/seller_listing_payment.php';
 
 requireLogin();
 
@@ -81,6 +82,11 @@ foreach ($gallery_images as $img) {
 }
 
 $additional = $listing['additional_details'] ? json_decode($listing['additional_details'], true) : [];
+
+$seller_payment = null;
+if ($is_seller) {
+    $seller_payment = getSellerListingPaymentInfo($conn, $listing_id, $user_id);
+}
 
 $conn->close();
 ?>
@@ -650,6 +656,31 @@ $conn->close();
             </div>
             
             <?php if ($is_seller): ?>
+                <?php if ($seller_payment && $seller_payment['has_deposit_payment']): ?>
+                <div class="payment-breakdown" style="margin-bottom: 16px; border: 1px solid #bbf7d0; background: #f0fdf4;">
+                    <div class="breakdown-item">
+                        <span>Total Price</span>
+                        <span><?php echo formatMoney($seller_payment['total_price']); ?></span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span>Deposit Paid</span>
+                        <span><?php echo formatMoney($seller_payment['deposit_paid']); ?></span>
+                    </div>
+                    <div class="breakdown-item total">
+                        <span>Remaining Balance</span>
+                        <span><?php echo formatMoney($seller_payment['remaining_balance']); ?></span>
+                    </div>
+                    <?php if ($seller_payment['payment_status'] === 'fully_paid'): ?>
+                        <p style="text-align:center;color:#059669;font-weight:600;margin-top:8px;">
+                            <i class="fas fa-check-circle"></i> Fully Paid
+                        </p>
+                    <?php elseif ($seller_payment['can_pay_remaining']): ?>
+                        <button type="button" class="btn-purchase pay-remaining-btn" style="margin-top:12px;border:none;width:100%;cursor:pointer;background:#10b981;" data-listing-id="<?php echo $listing_id; ?>">
+                            <i class="fas fa-wallet"></i> Pay Remaining Balance
+                        </button>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <div class="alert alert-info">
                     <i class="fas fa-info-circle"></i>
                     <div>This is your <?php echo $listing['type']; ?>. View bookings in "My Renters".</div>
@@ -704,6 +735,35 @@ $conn->close();
             img.onerror = function() {
                 this.style.display = 'none';
             };
+        });
+
+        document.querySelectorAll('.pay-remaining-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const listingId = this.dataset.listingId;
+                if (!confirm('Are you sure you want to pay the remaining balance?')) return;
+                const original = this.innerHTML;
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                try {
+                    const res = await fetch('/broker_system/user/api/pay_remaining.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ listing_id: parseInt(listingId, 10), action: 'initiate' })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.pay_url) {
+                        window.location.href = data.pay_url;
+                    } else {
+                        alert(data.error || 'Could not start payment');
+                        this.disabled = false;
+                        this.innerHTML = original;
+                    }
+                } catch (e) {
+                    alert('Network error');
+                    this.disabled = false;
+                    this.innerHTML = original;
+                }
+            });
         });
     </script>
 </body>

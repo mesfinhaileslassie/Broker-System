@@ -1,130 +1,447 @@
 <?php
-// ============================================
-// FILE: api/confirm_escrow_payment.php
-// ============================================
-// Confirm Telebirr payment and activate escrow
-
-session_start();
-header('Content-Type: application/json');
+// admin/escrow_management.php - Complete Admin Escrow Dashboard
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/auth.php';
 require_once '../includes/escrow_functions.php';
 
-$input = json_decode(file_get_contents('php://input'), true);
-$code = $input['payment_code'] ?? '';
-$pin = $input['pin'] ?? '';
-
-if (empty($code)) {
-    echo json_encode(['success' => false, 'error' => 'Payment code required']);
+if (!isLoggedIn() || $_SESSION['user_role'] != 'admin') {
+    header('Location: /broker_system/auth/login.php');
     exit;
 }
 
-// Verify PIN (simulation)
-if ($pin != '1234') {
-    echo json_encode(['success' => false, 'error' => 'Invalid PIN. Use 1234 for testing']);
-    exit;
-}
+$page_title = 'Escrow Management';
+ob_start();
 
 $conn = getDbConnection();
+$message = '';
+$error = '';
 
-// Find payment code
-$payment = $conn->query("
-    SELECT pc.*, t.id as transaction_id, t.buyer_id, t.seller_id, t.total_amount,
-           l.title, l.type
-    FROM payment_codes pc
-    JOIN transactions t ON pc.transaction_id = t.id
+// Handle admin actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $transaction_id = intval($_POST['transaction_id'] ?? 0);
+    $action = $_POST['action'] ?? '';
+    
+    if ($action === 'release') {
+        $result = adminReleasePayment($conn, $transaction_id, $_SESSION['user_id'], $_POST['release_notes'] ?? '');
+        if ($result['success']) {
+            $message = "✓ Payment released successfully!";
+        } else {
+            $error = $result['error'];
+        }
+    }
+    
+    if ($action === 'freeze') {
+        adminFreezeTransaction($conn, $transaction_id, $_SESSION['user_id'], $_POST['freeze_reason'] ?? '');
+        $message = "❄️ Transaction frozen successfully.";
+    }
+    
+    if ($action === 'unfreeze') {
+        adminUnfreezeTransaction($conn, $transaction_id, $_SESSION['user_id']);
+        $message = "🔥 Transaction unfrozen successfully.";
+    }
+    
+    if ($action === 'refund') {
+        $result = refundEscrowPayment($conn, $transaction_id, $_SESSION['user_id'], $_POST['refund_notes'] ?? '');
+        if ($result['success']) {
+            $message = "💰 Refund processed successfully.";
+        } else {
+            $error = $result['error'];
+        }
+    }
+}
+
+// Process auto-release queue
+$auto_released = processAutoReleaseQueue($conn);
+
+// Get escrow summary
+$summary = [
+    'total_held' => $conn->query("SELECT SUM(amount) as total FROM escrow_accounts WHERE status = 'held'")->fetch_assoc()['total'] ?? 0,
+    'total_released' => $conn->query("SELECT SUM(amount) as total FROM escrow_accounts WHERE status = 'released'")->fetch_assoc()['total'] ?? 0,
+    'active_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions WHERE escrow_status = 'active'")->fetch_assoc()['count'],
+    'pending_release' => $conn->query("SELECT COUNT(*) as count FROM escrow_release_queue WHERE status = 'pending' AND scheduled_release_date <= NOW()")->fetch_assoc()['count']
+];
+
+// Get all escrow transactions with complete details
+$escrow_transactions = $conn->query("
+    SELECT t.*, 
+           l.title, 
+           l.type, 
+           u1.full_name as buyer_name, 
+           u2.full_name as seller_name,
+           ea.id as escrow_id,
+           ea.amount as escrow_amount,
+           ea.status as escrow_account_status,
+           ea.created_at as escrow_created_at,
+           eq.scheduled_release_date,
+           (SELECT COUNT(*) FROM transaction_timeline tt WHERE tt.transaction_id = t.id) as timeline_count,
+           (SELECT SUM(amount) FROM payments WHERE transaction_id = t.id AND status = 'confirmed') as total_paid
+    FROM transactions t
     JOIN listings l ON t.listing_id = l.id
-    WHERE pc.code = '$code' AND pc.status = 'pending'
-")->fetch_assoc();
-
-if (!$payment) {
-    echo json_encode(['success' => false, 'error' => 'Invalid payment code']);
-    exit;
-}
-
-// Check expiry
-if (strtotime($payment['expires_at']) < time()) {
-    $conn->query("UPDATE payment_codes SET status = 'expired' WHERE code = '$code'");
-    echo json_encode(['success' => false, 'error' => 'Code expired']);
-    exit;
-}
-
-$conn->begin_transaction();
-
-try {
-    // Mark payment code as used
-    $conn->query("UPDATE payment_codes SET status = 'used' WHERE code = '$code'");
-    
-    // Record payment
-    $stmt = $conn->prepare("
-        INSERT INTO payments (transaction_id, user_id, amount, type, telebirr_code_5digit, status, confirmed_at, created_at) 
-        VALUES (?, ?, ?, 'deposit_buyer', ?, 'confirmed', NOW(), NOW())
-    ");
-    $stmt->bind_param("iids", $payment['transaction_id'], $payment['user_id'], $payment['amount'], $code);
-    $stmt->execute();
-    
-    // Update transaction escrow
-    $conn->query("
-        UPDATE transactions 
-        SET escrow_held = escrow_held + {$payment['amount']},
-            escrow_status = 'active',
-            status = 'escrow_active',
-            updated_at = NOW()
-        WHERE id = {$payment['transaction_id']}
-    ");
-    
-    // Initialize escrow account
-    $stmt2 = $conn->prepare("
-        INSERT INTO escrow_accounts (transaction_id, user_id, amount, type, status, created_at) 
-        VALUES (?, ?, ?, 'buyer_deposit', 'held', NOW())
-    ");
-    $stmt2->bind_param("iid", $payment['transaction_id'], $payment['user_id'], $payment['amount']);
-    $stmt2->execute();
-    
-    // Schedule auto-release based on listing type
-    $auto_days = 7;
-    if ($payment['type'] == 'rental') $auto_days = 14;
-    if ($payment['type'] == 'product') $auto_days = 5;
-    if ($payment['type'] == 'job') $auto_days = 10;
-    
-    $release_date = date('Y-m-d H:i:s', strtotime("+$auto_days days"));
-    $conn->query("
-        INSERT INTO escrow_release_queue (transaction_id, scheduled_release_date, status) 
-        VALUES ({$payment['transaction_id']}, '$release_date', 'pending')
-    ");
-    
-    $conn->query("
-        UPDATE transactions 
-        SET auto_release_days = $auto_days, escrow_release_date = '$release_date'
-        WHERE id = {$payment['transaction_id']}
-    ");
-    
-    // Add timeline
-    addTransactionTimeline($conn, $payment['transaction_id'], 'payment_confirmed', 
-        "Payment of " . formatMoney($payment['amount']) . " confirmed. Escrow activated.", $payment['user_id']);
-    
-    // Create notification for seller
-    $notif_stmt = $conn->prepare("
-        INSERT INTO notifications (user_id, title, message, created_at) 
-        VALUES (?, 'Payment Received', 'Buyer has paid for: {$payment['title']}. Escrow is now active. Please proceed with delivery.', NOW())
-    ");
-    $notif_stmt->bind_param("i", $payment['seller_id']);
-    $notif_stmt->execute();
-    
-    $conn->commit();
-    
-    echo json_encode([
-        'success' => true,
-        'message' => 'Payment confirmed! Escrow is now active.',
-        'transaction_id' => $payment['transaction_id'],
-        'auto_release_days' => $auto_days
-    ]);
-    
-} catch (Exception $e) {
-    $conn->rollback();
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-}
+    JOIN users u1 ON t.buyer_id = u1.id
+    JOIN users u2 ON t.seller_id = u2.id
+    LEFT JOIN escrow_accounts ea ON t.id = ea.transaction_id
+    LEFT JOIN escrow_release_queue eq ON t.id = eq.transaction_id AND eq.status = 'pending'
+    WHERE t.escrow_held > 0 OR t.escrow_status = 'active' OR ea.id IS NOT NULL
+    ORDER BY t.created_at DESC
+");
 
 $conn->close();
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Escrow Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #f0f2f5; }
+        
+        .admin-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 24px;
+            padding: 28px;
+            margin-bottom: 28px;
+            color: white;
+        }
+        .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .stat-value { font-size: 28px; font-weight: 700; color: #0f172a; }
+        .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+        
+        .escrow-card {
+            background: white;
+            border-radius: 24px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+        .escrow-header {
+            padding: 20px 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .escrow-body { padding: 20px 24px; }
+        
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge-active { background: #dbeafe; color: #1e40af; }
+        .badge-frozen { background: #fee2e2; color: #dc2626; }
+        .badge-completed { background: #d1fae5; color: #059669; }
+        .badge-pending { background: #fed7aa; color: #ea580c; }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .info-row:last-child { border-bottom: none; }
+        
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-warning { background: #f59e0b; color: white; }
+        .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 24px;
+            padding: 28px;
+            width: 500px;
+            max-width: 90%;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; }
+        
+        .alert { padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; }
+        .alert-success { background: #d1fae5; color: #059669; }
+        .alert-error { background: #fee2e2; color: #dc2626; }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            background: white;
+            border-radius: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .escrow-header { flex-direction: column; align-items: flex-start; }
+            .btn-group { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+<div class="admin-container">
+    <div class="header">
+        <h1><i class="fas fa-shield-alt"></i> Escrow Management Dashboard</h1>
+        <p>Monitor and manage all escrow transactions</p>
+    </div>
+    
+    <?php if ($auto_released > 0): ?>
+        <div class="alert alert-success">✓ <?php echo $auto_released; ?> payment(s) auto-released.</div>
+    <?php endif; ?>
+    
+    <?php if ($message): ?>
+        <div class="alert alert-success">✓ <?php echo $message; ?></div>
+    <?php endif; ?>
+    
+    <?php if ($error): ?>
+        <div class="alert alert-error">⚠️ <?php echo $error; ?></div>
+    <?php endif; ?>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value"><?php echo formatMoney($summary['total_held']); ?></div>
+            <div class="stat-label">Total Escrow Held</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value"><?php echo formatMoney($summary['total_released']); ?></div>
+            <div class="stat-label">Total Released</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value"><?php echo $summary['active_transactions']; ?></div>
+            <div class="stat-label">Active Escrow</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value"><?php echo $summary['pending_release']; ?></div>
+            <div class="stat-label">Pending Release</div>
+        </div>
+    </div>
+    
+    <h2 style="margin-bottom: 20px;">Escrow Transactions</h2>
+    
+    <?php if ($escrow_transactions && $escrow_transactions->num_rows > 0): ?>
+        <?php while($txn = $escrow_transactions->fetch_assoc()): ?>
+            <div class="escrow-card">
+                <div class="escrow-header">
+                    <div>
+                        <strong>#<?php echo $txn['id']; ?></strong> - <?php echo htmlspecialchars($txn['title']); ?>
+                        <span class="badge <?php 
+                            if ($txn['admin_frozen']) echo 'badge-frozen';
+                            elseif ($txn['status'] == 'completed') echo 'badge-completed';
+                            elseif ($txn['escrow_status'] == 'active') echo 'badge-active';
+                            else echo 'badge-pending';
+                        ?>" style="margin-left: 10px;">
+                            <?php 
+                            if ($txn['admin_frozen']) echo '❄️ Frozen';
+                            elseif ($txn['status'] == 'completed') echo '✓ Completed';
+                            elseif ($txn['escrow_status'] == 'active') echo '💰 Escrow Active';
+                            else echo '⏳ Pending';
+                            ?>
+                        </span>
+                    </div>
+                    <div><strong><?php echo formatMoney($txn['total_amount']); ?></strong></div>
+                </div>
+                <div class="escrow-body">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
+                        <div><small>Buyer:</small><br><strong><?php echo htmlspecialchars($txn['buyer_name']); ?></strong></div>
+                        <div><small>Seller:</small><br><strong><?php echo htmlspecialchars($txn['seller_name']); ?></strong></div>
+                        <div><small>Escrow Amount:</small><br><strong><?php echo formatMoney($txn['escrow_amount'] ?? 0); ?></strong></div>
+                    </div>
+                    
+                    <div class="info-row">
+                        <span>Escrow Status:</span>
+                        <span><?php echo ucfirst($txn['escrow_status'] ?? 'pending'); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span>Total Paid:</span>
+                        <span><?php echo formatMoney($txn['total_paid'] ?? 0); ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span>Created:</span>
+                        <span><?php echo date('M d, Y H:i', strtotime($txn['created_at'])); ?></span>
+                    </div>
+                    <?php if ($txn['scheduled_release_date']): ?>
+                    <div class="info-row">
+                        <span>Auto-Release:</span>
+                        <span><?php echo date('M d, Y', strtotime($txn['scheduled_release_date'])); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($txn['escrow_created_at']): ?>
+                    <div class="info-row">
+                        <span>Escrow Created:</span>
+                        <span><?php echo date('M d, Y H:i', strtotime($txn['escrow_created_at'])); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <div class="btn-group">
+                        <?php if (($txn['escrow_status'] == 'active' || $txn['escrow_held'] > 0) && !$txn['admin_frozen']): ?>
+                            <button onclick="openReleaseModal(<?php echo $txn['id']; ?>)" class="btn btn-success">
+                                <i class="fas fa-money-bill-wave"></i> Release Payment
+                            </button>
+                            <button onclick="openFreezeModal(<?php echo $txn['id']; ?>)" class="btn btn-warning">
+                                <i class="fas fa-ice-cream"></i> Freeze
+                            </button>
+                            <button onclick="openRefundModal(<?php echo $txn['id']; ?>)" class="btn btn-danger">
+                                <i class="fas fa-undo"></i> Refund Buyer
+                            </button>
+                        <?php elseif ($txn['admin_frozen']): ?>
+                            <form method="POST" style="display: inline;">
+                                <input type="hidden" name="transaction_id" value="<?php echo $txn['id']; ?>">
+                                <input type="hidden" name="action" value="unfreeze">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-fire"></i> Unfreeze
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                        
+                        <a href="/broker_system/user/transaction.php?id=<?php echo $txn['id']; ?>" target="_blank" class="btn btn-outline">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+        <?php endwhile; ?>
+    <?php else: ?>
+        <div class="empty-state">
+            <i class="fas fa-shield-alt" style="font-size: 64px; color: #cbd5e1; margin-bottom: 16px; display: block;"></i>
+            <h3>No Escrow Transactions</h3>
+            <p>No escrow transactions found in the system.</p>
+        </div>
+    <?php endif; ?>
+</div>
+
+<!-- Release Modal -->
+<div id="releaseModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-bottom: 16px;"><i class="fas fa-money-bill-wave"></i> Release Payment</h3>
+        <form method="POST">
+            <input type="hidden" name="transaction_id" id="releaseTransactionId">
+            <input type="hidden" name="action" value="release">
+            <div class="form-group">
+                <label>Release Notes</label>
+                <textarea name="release_notes" rows="3" placeholder="Reason for manual release..."></textarea>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-success">Confirm Release</button>
+                <button type="button" onclick="closeReleaseModal()" class="btn btn-outline">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Freeze Modal -->
+<div id="freezeModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-bottom: 16px;"><i class="fas fa-ice-cream"></i> Freeze Transaction</h3>
+        <form method="POST">
+            <input type="hidden" name="transaction_id" id="freezeTransactionId">
+            <input type="hidden" name="action" value="freeze">
+            <div class="form-group">
+                <label>Reason for Freezing</label>
+                <textarea name="freeze_reason" rows="3" placeholder="Enter reason for freezing this transaction..." required></textarea>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-warning">Confirm Freeze</button>
+                <button type="button" onclick="closeFreezeModal()" class="btn btn-outline">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Refund Modal -->
+<div id="refundModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-bottom: 16px;"><i class="fas fa-undo"></i> Refund Buyer</h3>
+        <form method="POST">
+            <input type="hidden" name="transaction_id" id="refundTransactionId">
+            <input type="hidden" name="action" value="refund">
+            <div class="form-group">
+                <label>Refund Notes</label>
+                <textarea name="refund_notes" rows="3" placeholder="Reason for refund..." required></textarea>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-danger">Confirm Refund</button>
+                <button type="button" onclick="closeRefundModal()" class="btn btn-outline">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openReleaseModal(id) {
+    document.getElementById('releaseTransactionId').value = id;
+    document.getElementById('releaseModal').style.display = 'flex';
+}
+function closeReleaseModal() { document.getElementById('releaseModal').style.display = 'none'; }
+
+function openFreezeModal(id) {
+    document.getElementById('freezeTransactionId').value = id;
+    document.getElementById('freezeModal').style.display = 'flex';
+}
+function closeFreezeModal() { document.getElementById('freezeModal').style.display = 'none'; }
+
+function openRefundModal(id) {
+    document.getElementById('refundTransactionId').value = id;
+    document.getElementById('refundModal').style.display = 'flex';
+}
+function closeRefundModal() { document.getElementById('refundModal').style.display = 'none'; }
+
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.style.display = 'none';
+    }
+}
+</script>
+
+<?php
+$content = ob_get_clean();
+include 'layout.php';
 ?>

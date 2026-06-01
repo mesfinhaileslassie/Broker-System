@@ -16,6 +16,7 @@ ob_start();
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/seller_listing_payment.php';
 
 $conn = getDbConnection();
 $user_id = $_SESSION['user_id'];
@@ -129,6 +130,17 @@ $counts = [
     ")->fetch_assoc()['count'],
     'rejected' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'rejected'")->fetch_assoc()['count'],
 ];
+
+$listings_rows = [];
+if ($listings && $listings->num_rows > 0) {
+    while ($row = $listings->fetch_assoc()) {
+        $row['seller_payment'] = null;
+        if ($row['status'] === 'active' && $row['approval_status'] === 'approved') {
+            $row['seller_payment'] = getSellerListingPaymentInfo($conn, $row['id'], $user_id);
+        }
+        $listings_rows[] = $row;
+    }
+}
 
 $conn->close();
 ?>
@@ -434,6 +446,45 @@ $conn->close();
         margin: 12px 0;
         font-size: 12px;
     }
+
+    .seller-payment-summary {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        padding: 12px;
+        border-radius: 12px;
+        margin: 12px 0;
+        font-size: 12px;
+    }
+
+    .seller-payment-summary .pay-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 4px 0;
+    }
+
+    .seller-payment-summary .pay-row.remaining {
+        font-weight: 700;
+        color: #059669;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #bbf7d0;
+    }
+
+    .badge-fully-paid {
+        background: #d1fae5;
+        color: #059669;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-block;
+        margin-top: 8px;
+    }
+
+    .pay-remaining-btn.loading {
+        opacity: 0.7;
+        pointer-events: none;
+    }
     
     .empty-state {
         text-align: center;
@@ -630,9 +681,9 @@ $conn->close();
     </a>
 </div>
 
-<?php if ($listings->num_rows > 0): ?>
+<?php if (!empty($listings_rows)): ?>
     <div class="listings-grid">
-        <?php while($listing = $listings->fetch_assoc()): 
+        <?php foreach ($listings_rows as $listing): 
             $cover_image = $listing['cover_image'] ? '/broker_system/uploads/listings/' . $listing['cover_image'] : '';
             $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
             $has_negotiation = $listing['negotiation_id'];
@@ -770,6 +821,36 @@ $conn->close();
                         </div>
                     <?php endif; ?>
                     
+                    <?php
+                    $sp = $listing['seller_payment'] ?? null;
+                    if ($sp && $sp['has_deposit_payment']): ?>
+                        <div class="seller-payment-summary" id="payment-summary-<?php echo $listing['id']; ?>">
+                            <strong><i class="fas fa-chart-pie"></i> Your Payment Status</strong>
+                            <div class="pay-row">
+                                <span>Total Price</span>
+                                <span><?php echo formatMoney($sp['total_price']); ?></span>
+                            </div>
+                            <div class="pay-row">
+                                <span>Deposit Paid</span>
+                                <span><?php echo formatMoney($sp['deposit_paid']); ?></span>
+                            </div>
+                            <div class="pay-row remaining">
+                                <span>Remaining Balance</span>
+                                <span class="remaining-amount"><?php echo formatMoney($sp['remaining_balance']); ?></span>
+                            </div>
+                            <?php if ($sp['payment_status'] === 'fully_paid'): ?>
+                                <span class="badge-fully-paid"><i class="fas fa-check-circle"></i> Fully Paid</span>
+                            <?php elseif ($sp['can_pay_remaining']): ?>
+                                <button type="button"
+                                    class="btn btn-success pay-remaining-btn"
+                                    style="width: 100%; margin-top: 12px;"
+                                    data-listing-id="<?php echo $listing['id']; ?>">
+                                    <i class="fas fa-wallet"></i> Pay Remaining Balance
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
                     <!-- Regular Action Buttons (for non-negotiation listings) -->
                     <?php if (!$has_negotiation && !($listing['approval_status'] == 'approved' && $listing['status'] == 'pending')): ?>
                         <div class="btn-group">
@@ -783,7 +864,7 @@ $conn->close();
                     <?php endif; ?>
                 </div>
             </div>
-        <?php endwhile; ?>
+        <?php endforeach; ?>
     </div>
 <?php else: ?>
     <div class="empty-state">
@@ -849,6 +930,51 @@ window.onclick = function(event) {
         modal.style.display = 'none';
     }
 }
+
+document.querySelectorAll('.pay-remaining-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const listingId = this.dataset.listingId;
+        if (!confirm('Are you sure you want to pay the remaining balance?')) {
+            return;
+        }
+
+        const originalHtml = this.innerHTML;
+        this.classList.add('loading');
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+        try {
+            const res = await fetch('/broker_system/user/api/pay_remaining.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listing_id: parseInt(listingId, 10), action: 'initiate' })
+            });
+            const data = await res.json();
+
+            if (data.success && data.pay_url) {
+                window.location.href = data.pay_url;
+                return;
+            }
+
+            alert(data.error || 'Could not start remaining payment');
+            this.classList.remove('loading');
+            this.innerHTML = originalHtml;
+        } catch (err) {
+            alert('Network error. Please try again.');
+            this.classList.remove('loading');
+            this.innerHTML = originalHtml;
+        }
+    });
+});
+
+<?php if (isset($_GET['fully_paid'])): ?>
+(function() {
+    const n = document.createElement('div');
+    n.style.cssText = 'position:fixed;top:20px;right:20px;background:#10b981;color:#fff;padding:14px 20px;border-radius:12px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+    n.innerHTML = '<i class="fas fa-check-circle"></i> Remaining balance paid successfully!';
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 5000);
+})();
+<?php endif; ?>
 </script>
 
 <?php

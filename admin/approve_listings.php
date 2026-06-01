@@ -1,5 +1,5 @@
 <?php
-// admin/approve_listings.php - Completely Redesigned Modern Version
+// admin/approve_listings.php - Updated to show all pending listings
 
 $page_title = 'Approve Listings';
 ob_start();
@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deposit = floatval($_POST['deposit_amount']);
         $notes = $conn->real_escape_string($_POST['admin_notes'] ?? '');
         
+        // Check if negotiation exists
         $neg_check = $conn->query("SELECT id FROM listing_negotiations WHERE listing_id = $listing_id");
         if ($neg_check->num_rows > 0) {
             $negotiation_id = $neg_check->fetch_assoc()['id'];
@@ -47,10 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $negotiation_id = $conn->insert_id;
         }
         
+        // Update listing approval status
+        $conn->query("UPDATE listings SET approval_status = 'approved' WHERE id = $listing_id");
+        
         $listing = $conn->query("SELECT title, seller_id FROM listings WHERE id = $listing_id")->fetch_assoc();
         $notif_stmt = $conn->prepare("
             INSERT INTO notifications (user_id, title, message, created_at) 
-            VALUES (?, 'Commission Proposal', 'Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit for your listing \"{$listing['title']}\". Please review.', NOW())
+            VALUES (?, 'Commission Proposal', 'Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit for your listing \"{$listing['title']}\". Please accept to publish.', NOW())
         ");
         $notif_stmt->bind_param("i", $listing['seller_id']);
         $notif_stmt->execute();
@@ -73,6 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
         $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
+        
+        // Update listing to approved
+        $conn->query("UPDATE listings SET approval_status = 'approved' WHERE id = {$neg['listing_id']}");
         
         $notif_stmt = $conn->prepare("
             INSERT INTO notifications (user_id, title, message, created_at) 
@@ -97,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get pending listings with negotiation status
+// Get ALL pending listings (approval_status = 'pending')
 $pendingListings = $conn->query("
     SELECT l.*, u.full_name as seller_name, u.email as seller_email,
            ln.id as negotiation_id, ln.status as negotiation_status,
@@ -110,11 +117,24 @@ $pendingListings = $conn->query("
     ORDER BY l.created_at DESC
 ");
 
+// Also check for listings that might need payment
+$paymentNeeded = $conn->query("
+    SELECT l.*, u.full_name as seller_name, u.email as seller_email,
+           ln.id as negotiation_id, ln.status as negotiation_status,
+           ln.proposed_commission, ln.proposed_deposit,
+           ln.counter_commission, ln.counter_deposit
+    FROM listings l
+    JOIN users u ON l.seller_id = u.id
+    LEFT JOIN listing_negotiations ln ON l.id = ln.listing_id
+    WHERE l.approval_status = 'approved' AND l.status = 'pending'
+    ORDER BY l.created_at DESC
+");
+
 // Get statistics
 $stats = [
     'pending' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE approval_status = 'pending'")->fetch_assoc()['count'],
     'negotiating' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status IN ('commission_proposed', 'counter_offer_sent')")->fetch_assoc()['count'],
-    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'agreement_accepted'")->fetch_assoc()['count'],
+    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE approval_status = 'approved' AND status = 'pending'")->fetch_assoc()['count'],
 ];
 
 $conn->close();
@@ -125,8 +145,11 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approve Listings - Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* Premium Admin Styles */
+        /* Your existing styles */
         :root {
             --primary: #4f46e5;
             --primary-dark: #4338ca;
@@ -142,13 +165,12 @@ $conn->close();
             --info-light: #dbeafe;
             --dark: #1e293b;
             --gray: #64748b;
-            --gray-light: #f1f5f9;
+            --gray-light: #f8fafc;
             --border: #e2e8f0;
-            --card-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
-            --card-shadow-hover: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.02);
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            --card-shadow-hover: 0 10px 25px -5px rgba(0,0,0,0.08);
         }
         
-        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -185,8 +207,6 @@ $conn->close();
             font-size: 2rem;
             font-weight: 800;
             color: var(--dark);
-            line-height: 1.2;
-            letter-spacing: -0.02em;
         }
         
         .stat-label {
@@ -198,21 +218,11 @@ $conn->close();
             margin-top: 0.5rem;
         }
         
-        .stat-icon {
-            position: absolute;
-            right: 1rem;
-            top: 1rem;
-            opacity: 0.1;
-            font-size: 3rem;
-        }
-        
-        /* Listing Cards */
         .listing-card {
             background: white;
             border-radius: 1rem;
             margin-bottom: 1.5rem;
             overflow: hidden;
-            transition: all 0.3s ease;
             border: 1px solid var(--border);
         }
         
@@ -252,7 +262,6 @@ $conn->close();
             color: var(--primary);
         }
         
-        /* Badges */
         .badge {
             display: inline-flex;
             align-items: center;
@@ -267,7 +276,6 @@ $conn->close();
         .badge-negotiating { background: var(--info-light); color: #1e40af; }
         .badge-payment { background: var(--success-light); color: #065f46; }
         
-        /* Negotiation Box */
         .negotiation-box {
             padding: 1.25rem 1.5rem;
             background: #fafcff;
@@ -292,7 +300,6 @@ $conn->close();
             font-weight: 500;
             color: var(--gray);
             text-transform: uppercase;
-            letter-spacing: 0.3px;
         }
         
         .offer-value {
@@ -312,7 +319,6 @@ $conn->close();
             border-left: 3px solid var(--warning);
         }
         
-        /* Buttons */
         .btn-group {
             padding: 1rem 1.5rem;
             background: white;
@@ -353,17 +359,11 @@ $conn->close();
         
         .btn-success:hover {
             background: #059669;
-            transform: translateY(-1px);
         }
         
         .btn-danger {
             background: var(--danger);
             color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #dc2626;
-            transform: translateY(-1px);
         }
         
         .btn-outline {
@@ -372,18 +372,6 @@ $conn->close();
             color: var(--gray);
         }
         
-        .btn-outline:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-        
-        .btn-disabled {
-            background: var(--gray-light);
-            color: var(--gray);
-            cursor: not-allowed;
-        }
-        
-        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -421,17 +409,10 @@ $conn->close();
             border-bottom: 1px solid var(--border);
         }
         
-        .modal-header h3 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--dark);
-        }
-        
         .close-modal {
             cursor: pointer;
             font-size: 1.5rem;
             color: var(--gray);
-            transition: color 0.2s;
         }
         
         .close-modal:hover {
@@ -447,7 +428,6 @@ $conn->close();
             margin-bottom: 0.5rem;
             font-weight: 600;
             font-size: 0.8rem;
-            color: var(--dark);
         }
         
         .form-group input, .form-group textarea {
@@ -455,14 +435,6 @@ $conn->close();
             padding: 0.75rem;
             border: 1px solid var(--border);
             border-radius: 0.75rem;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-        
-        .form-group input:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
         }
         
         .form-row {
@@ -506,12 +478,6 @@ $conn->close();
             margin-bottom: 1rem;
         }
         
-        .info-text {
-            font-size: 0.7rem;
-            color: var(--gray);
-            margin-top: 0.25rem;
-        }
-        
         @media (max-width: 768px) {
             .stats-grid {
                 grid-template-columns: 1fr;
@@ -530,9 +496,6 @@ $conn->close();
             }
             .btn {
                 justify-content: center;
-            }
-            .form-row {
-                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -564,6 +527,9 @@ $conn->close();
         </div>
     <?php endif; ?>
     
+    <!-- Pending Approval Listings -->
+    <h2 style="margin-bottom: 1rem; font-size: 1.25rem;">Listings Awaiting Approval</h2>
+    
     <?php if ($pendingListings && $pendingListings->num_rows > 0): ?>
         <?php while($listing = $pendingListings->fetch_assoc()): 
             $has_negotiation = $listing['negotiation_id'];
@@ -583,7 +549,6 @@ $conn->close();
                     <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
                 </div>
                 
-                <!-- Offer Details -->
                 <?php if ($listing['proposed_commission']): ?>
                 <div class="negotiation-box">
                     <div class="offer-grid">
@@ -611,7 +576,6 @@ $conn->close();
                 </div>
                 <?php endif; ?>
                 
-                <!-- Action Buttons -->
                 <div class="btn-group">
                     <?php if (!$has_negotiation): ?>
                         <button onclick="openProposeModal(<?php echo $listing['id']; ?>, <?php echo $listing['price']; ?>)" class="btn btn-primary">
@@ -638,6 +602,10 @@ $conn->close();
                         <button class="btn btn-outline" disabled>
                             <i class="fas fa-hourglass-half"></i> Waiting for Seller Response
                         </button>
+                        
+                        <button onclick="openProposeModal(<?php echo $listing['id']; ?>, <?php echo $listing['price']; ?>)" class="btn btn-primary">
+                            <i class="fas fa-edit"></i> Modify Offer
+                        </button>
                     <?php endif; ?>
                     
                     <a href="/broker_system/user/product.php?id=<?php echo $listing['id']; ?>" target="_blank" class="btn btn-outline">
@@ -651,9 +619,54 @@ $conn->close();
             <div class="empty-state-icon">
                 <i class="fas fa-check-circle"></i>
             </div>
-            <h3 style="margin-bottom: 0.5rem;">No Pending Listings</h3>
-            <p style="color: var(--gray);">All listings have been processed. Great job!</p>
+            <h3>No Pending Listings</h3>
+            <p>All listings have been processed.</p>
         </div>
+    <?php endif; ?>
+    
+    <!-- Listings Awaiting Payment -->
+    <?php if ($paymentNeeded && $paymentNeeded->num_rows > 0): ?>
+    <h2 style="margin: 2rem 0 1rem; font-size: 1.25rem;">Listings Awaiting Payment</h2>
+    
+    <?php while($listing = $paymentNeeded->fetch_assoc()): ?>
+        <div class="listing-card">
+            <div class="card-header">
+                <div class="listing-info">
+                    <h3><?php echo htmlspecialchars($listing['title']); ?></h3>
+                    <div class="listing-meta">
+                        <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($listing['seller_name']); ?></span>
+                        <span><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($listing['seller_email']); ?></span>
+                        <span class="badge badge-payment"><i class="fas fa-credit-card"></i> Awaiting Payment</span>
+                    </div>
+                </div>
+                <div class="listing-price"><?php echo formatMoney($listing['price']); ?></div>
+            </div>
+            
+            <?php if ($listing['proposed_commission']): ?>
+            <div class="negotiation-box">
+                <div class="offer-grid">
+                    <div class="offer-item">
+                        <span class="offer-label">Agreed Commission</span>
+                        <span class="offer-value proposed"><?php echo $listing['proposed_commission']; ?>%</span>
+                    </div>
+                    <div class="offer-item">
+                        <span class="offer-label">Deposit Required</span>
+                        <span class="offer-value proposed"><?php echo formatMoney($listing['proposed_deposit']); ?></span>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <div class="btn-group">
+                <a href="/broker_system/user/pay_listing.php?listing_id=<?php echo $listing['id']; ?>" class="btn btn-success" target="_blank">
+                    <i class="fas fa-credit-card"></i> Help Seller Pay
+                </a>
+                <a href="/broker_system/user/product.php?id=<?php echo $listing['id']; ?>" target="_blank" class="btn btn-outline">
+                    <i class="fas fa-eye"></i> View Listing
+                </a>
+            </div>
+        </div>
+    <?php endwhile; ?>
     <?php endif; ?>
 </div>
 
@@ -696,6 +709,20 @@ $conn->close();
         </form>
     </div>
 </div>
+
+<style>
+    .info-text {
+        font-size: 0.7rem;
+        color: var(--gray);
+        margin-top: 0.25rem;
+    }
+    h2 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--dark);
+        margin-bottom: 1rem;
+    }
+</style>
 
 <script>
 function openProposeModal(listingId, price) {

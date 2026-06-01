@@ -4,6 +4,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/escrow_functions.php';
 
 requireLogin();
 
@@ -31,6 +32,17 @@ $bookings = $conn->query("
         t.commission_amount,
         t.escrow_held,
         t.created_at as transaction_date,
+        t.escrow_status,
+        t.delivery_status,
+        t.escrow_release_date,
+        t.auto_release_days,
+        t.handover_confirmed,
+        t.handover_confirmed_at,
+        t.buyer_confirmed_at,
+        t.payment_released_at,
+        (SELECT SUM(amount) FROM payments WHERE transaction_id = t.id AND status = 'confirmed' AND type = 'deposit_buyer') as buyer_deposit_paid,
+        (SELECT SUM(amount) FROM payments WHERE transaction_id = t.id AND status = 'confirmed' AND type = 'commission') as commission_paid,
+        (SELECT SUM(amount) FROM payments WHERE transaction_id = t.id AND status = 'confirmed') as total_paid,
         p.amount as paid_amount,
         p.confirmed_at as payment_date,
         p.telebirr_code_5digit as payment_code
@@ -50,8 +62,11 @@ $stats = [
     'confirmed' => 0,
     'completed' => 0,
     'paid' => 0,
+    'deposit_received' => 0,
     'total_earnings' => 0,
-    'total_deposits' => 0
+    'total_deposits' => 0,
+    'total_commission' => 0,
+    'escrow_held' => 0
 ];
 
 $bookings_list = [];
@@ -63,9 +78,15 @@ if ($bookings && $bookings->num_rows > 0) {
         if ($row['status'] == 'pending') $stats['pending']++;
         if ($row['status'] == 'confirmed') $stats['confirmed']++;
         if ($row['status'] == 'completed') $stats['completed']++;
-        if ($row['paid_amount'] > 0) $stats['paid']++;
+        
+        $has_payment = ($row['buyer_deposit_paid'] > 0 || $row['commission_paid'] > 0);
+        if ($has_payment) $stats['paid']++;
+        if ($row['deposit_paid'] > 0) $stats['deposit_received']++;
         
         $stats['total_deposits'] += $row['deposit_paid'];
+        $stats['total_commission'] += $row['commission_amount'];
+        $stats['escrow_held'] += $row['escrow_held'];
+        
         if ($row['status'] == 'completed') {
             $stats['total_earnings'] += $row['total_amount'] - $row['commission_amount'];
         }
@@ -140,7 +161,7 @@ $conn->close();
     /* Stats Grid */
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 20px;
         margin-bottom: 28px;
     }
@@ -228,6 +249,7 @@ $conn->close();
     
     .payment-paid { background: #d1fae5; color: #059669; }
     .payment-pending { background: #fed7aa; color: #ea580c; }
+    .payment-partial { background: #fef3c7; color: #92400e; }
     
     .booking-body {
         padding: 24px;
@@ -308,6 +330,63 @@ $conn->close();
         color: var(--primary);
     }
     
+    /* Payment Status Card */
+    .payment-status-card {
+        background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 20px;
+        border: 1px solid #10b981;
+    }
+    
+    .payment-status-card h4 {
+        color: #065f46;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    /* Renter Highlight Card */
+    .renter-highlight-card {
+        background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 2px solid #38bdf8;
+    }
+    
+    .renter-highlight-card h4 {
+        color: #0369a1;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 16px;
+    }
+    
+    .renter-detail-row {
+        display: flex;
+        margin-bottom: 12px;
+        padding: 8px;
+        background: white;
+        border-radius: 12px;
+    }
+    
+    .renter-label {
+        width: 100px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #64748b;
+    }
+    
+    .renter-value {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    
     /* Dates Section */
     .dates-section {
         background: linear-gradient(135deg, #667eea10, #764ba210);
@@ -344,6 +423,15 @@ $conn->close();
         border-radius: 40px;
         font-size: 14px;
         font-weight: 600;
+    }
+    
+    /* Escrow Info */
+    .escrow-info {
+        background: #dbeafe;
+        border-radius: 12px;
+        padding: 12px;
+        margin: 12px 0;
+        font-size: 12px;
     }
     
     /* Special Requests */
@@ -410,7 +498,25 @@ $conn->close();
         color: var(--primary);
     }
     
-    /* Alert Banner for New Bookings */
+    .btn-warning {
+        background: var(--warning);
+        color: white;
+    }
+    
+    .btn-warning:hover {
+        background: #d97706;
+    }
+    
+    .btn-danger {
+        background: var(--danger);
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        background: #dc2626;
+    }
+    
+    /* Alert Banner */
     .alert-banner {
         background: #fef3c7;
         border-left: 4px solid #f59e0b;
@@ -422,26 +528,6 @@ $conn->close();
         justify-content: space-between;
         flex-wrap: wrap;
         gap: 12px;
-    }
-    
-    .alert-banner i {
-        font-size: 24px;
-        color: #f59e0b;
-    }
-    
-    .alert-banner-content {
-        flex: 1;
-    }
-    
-    .alert-banner-title {
-        font-weight: 700;
-        color: #92400e;
-    }
-    
-    .alert-banner-message {
-        font-size: 12px;
-        color: #b45309;
-        margin-top: 4px;
     }
     
     /* Modal */
@@ -462,7 +548,7 @@ $conn->close();
         background: white;
         border-radius: 24px;
         padding: 28px;
-        width: 500px;
+        width: 550px;
         max-width: 90%;
         max-height: 80vh;
         overflow-y: auto;
@@ -504,7 +590,6 @@ $conn->close();
         color: white;
     }
     
-    /* Refresh Button */
     .refresh-btn {
         background: white;
         border: 1px solid var(--border);
@@ -551,6 +636,13 @@ $conn->close();
         .btn {
             justify-content: center;
         }
+        .renter-detail-row {
+            flex-direction: column;
+        }
+        .renter-label {
+            width: 100%;
+            margin-bottom: 5px;
+        }
     }
 </style>
 
@@ -567,14 +659,14 @@ $conn->close();
         </div>
     </div>
     
-    <!-- Alert for New Bookings -->
+    <!-- Alert for New Bookings or Payments -->
     <?php if ($stats['pending'] > 0 || $stats['paid'] > 0): ?>
     <div class="alert-banner">
         <i class="fas fa-bell"></i>
         <div class="alert-banner-content">
             <div class="alert-banner-title">
                 <?php if ($stats['pending'] > 0 && $stats['paid'] > 0): ?>
-                    📢 You have <?php echo $stats['pending']; ?> pending booking(s) and <?php echo $stats['paid']; ?> new payment(s)!
+                    📢 You have <?php echo $stats['pending']; ?> pending booking(s) and <?php echo $stats['paid']; ?> new payment(s) received!
                 <?php elseif ($stats['pending'] > 0): ?>
                     📢 You have <?php echo $stats['pending']; ?> new pending booking request(s)!
                 <?php elseif ($stats['paid'] > 0): ?>
@@ -599,33 +691,34 @@ $conn->close();
             <div class="stat-label">Pending</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value"><?php echo $stats['confirmed']; ?></div>
-            <div class="stat-label">Confirmed</div>
+            <div class="stat-value"><?php echo $stats['deposit_received']; ?></div>
+            <div class="stat-label">Deposits Received</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value"><?php echo formatMoney($stats['total_deposits']); ?></div>
-            <div class="stat-label">Total Deposits</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value"><?php echo formatMoney($stats['total_earnings']); ?></div>
-            <div class="stat-label">Total Earnings</div>
+            <div class="stat-value"><?php echo formatMoney($stats['escrow_held']); ?></div>
+            <div class="stat-label">Escrow Held</div>
         </div>
     </div>
     
     <?php if (!empty($bookings_list)): ?>
-        <?php foreach($bookings_list as $booking): ?>
+        <?php foreach($bookings_list as $booking): 
+            $has_payment = ($booking['buyer_deposit_paid'] > 0 || $booking['commission_paid'] > 0);
+            $payment_status = 'pending';
+            if ($booking['buyer_deposit_paid'] > 0 && $booking['commission_paid'] > 0) {
+                $payment_status = 'paid';
+            } elseif ($booking['buyer_deposit_paid'] > 0) {
+                $payment_status = 'partial';
+            }
+        ?>
             <div class="booking-card">
                 <!-- Header with Status -->
                 <div class="booking-header">
                     <div>
-                        <?php
-                        $status_color = '';
-                        if ($booking['status'] == 'pending') $status_color = 'status-pending';
-                        elseif ($booking['status'] == 'confirmed') $status_color = 'status-confirmed';
-                        elseif ($booking['status'] == 'completed') $status_color = 'status-completed';
-                        else $status_color = 'status-cancelled';
-                        ?>
-                        <span class="status-badge <?php echo $status_color; ?>">
+                        <span class="status-badge <?php 
+                            echo $booking['status'] == 'pending' ? 'status-pending' : 
+                                ($booking['status'] == 'confirmed' ? 'status-confirmed' : 
+                                ($booking['status'] == 'completed' ? 'status-completed' : 'status-cancelled')); 
+                        ?>">
                             <i class="fas <?php 
                                 echo $booking['status'] == 'pending' ? 'fa-clock' : 
                                     ($booking['status'] == 'confirmed' ? 'fa-check-circle' : 
@@ -633,13 +726,21 @@ $conn->close();
                             ?>"></i>
                             <?php echo ucfirst($booking['status']); ?>
                         </span>
-                        <span class="payment-badge payment-<?php echo $booking['paid_amount'] > 0 ? 'paid' : 'pending'; ?>" style="margin-left: 8px;">
+                        
+                        <span class="payment-badge payment-<?php echo $payment_status; ?>" style="margin-left: 8px;">
                             <i class="fas fa-credit-card"></i>
-                            <?php echo $booking['paid_amount'] > 0 ? '💰 Deposit Paid' : '⏳ Awaiting Payment'; ?>
+                            <?php if ($payment_status == 'paid'): ?>
+                                💰 Deposit & Commission Paid
+                            <?php elseif ($payment_status == 'partial'): ?>
+                                ⏳ Deposit Paid (Commission Pending)
+                            <?php else: ?>
+                                ⏳ Awaiting Payment
+                            <?php endif; ?>
                         </span>
-                        <?php if ($booking['paid_amount'] > 0): ?>
-                            <span class="payment-badge" style="background: #10b981; color: white; margin-left: 8px;">
-                                <i class="fas fa-check-circle"></i> Payment Confirmed
+                        
+                        <?php if ($booking['escrow_status'] == 'active'): ?>
+                            <span class="payment-badge" style="background: #dbeafe; color: #1e40af; margin-left: 8px;">
+                                <i class="fas fa-shield-alt"></i> Escrow Active
                             </span>
                         <?php endif; ?>
                     </div>
@@ -658,88 +759,92 @@ $conn->close();
                         </div>
                     </div>
                     
-                    <!-- Renter Information Grid -->
-                    <div class="info-grid">
-                        <!-- Tenant Info -->
-                        <div class="info-card">
-                            <div class="info-card-title">
-                                <i class="fas fa-user"></i> Renter Information
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Full Name</span>
-                                <div class="info-value"><?php echo htmlspecialchars($booking['tenant_name']); ?></div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Email Address</span>
-                                <div class="info-value"><?php echo htmlspecialchars($booking['tenant_email']); ?></div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Phone Number</span>
-                                <div class="info-value"><?php echo htmlspecialchars($booking['tenant_phone'] ?: 'Not provided'); ?></div>
-                            </div>
-                            <?php if ($booking['tenant_address'] || $booking['tenant_city']): ?>
-                            <div class="info-row">
-                                <span class="info-label">Address</span>
-                                <div class="info-value">
-                                    <?php echo htmlspecialchars($booking['tenant_address'] ?: ''); ?>
-                                    <?php echo htmlspecialchars($booking['tenant_city'] ?: ''); ?>
-                                </div>
-                            </div>
-                            <?php endif; ?>
+                    <!-- RENTER / GUEST HIGHLIGHT CARD - WHO IS BOOKING -->
+                    <div class="renter-highlight-card">
+                        <h4><i class="fas fa-user-circle"></i> 🧑 GUEST / RENTER INFORMATION</h4>
+                        <div class="renter-detail-row">
+                            <div class="renter-label"><i class="fas fa-user"></i> Full Name:</div>
+                            <div class="renter-value"><?php echo htmlspecialchars($booking['tenant_name']); ?></div>
                         </div>
+                        <div class="renter-detail-row">
+                            <div class="renter-label"><i class="fas fa-envelope"></i> Email:</div>
+                            <div class="renter-value"><?php echo htmlspecialchars($booking['tenant_email']); ?></div>
+                        </div>
+                        <div class="renter-detail-row">
+                            <div class="renter-label"><i class="fas fa-phone"></i> Phone:</div>
+                            <div class="renter-value"><?php echo htmlspecialchars($booking['tenant_phone'] ?: 'Not provided'); ?></div>
+                        </div>
+                        <?php if ($booking['tenant_address'] || $booking['tenant_city']): ?>
+                        <div class="renter-detail-row">
+                            <div class="renter-label"><i class="fas fa-map-marker-alt"></i> Address:</div>
+                            <div class="renter-value"><?php echo htmlspecialchars($booking['tenant_address'] ?: ''); ?> <?php echo htmlspecialchars($booking['tenant_city'] ?: ''); ?></div>
+                        </div>
+                        <?php endif; ?>
                         
-                        <!-- Payment Info -->
-                        <div class="info-card">
-                            <div class="info-card-title">
-                                <i class="fas fa-money-bill-wave"></i> Payment Details
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Total Amount</span>
-                                <div class="info-value amount-large"><?php echo formatMoney($booking['total_amount']); ?></div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Deposit Paid (in Escrow)</span>
-                                <div class="info-value" style="color: var(--success); font-size: 18px; font-weight: 700;">
+                        <!-- Quick Contact Buttons -->
+                        <div style="margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+                            <a href="mailto:<?php echo $booking['tenant_email']; ?>" class="btn btn-outline" style="font-size: 12px; padding: 6px 12px;">
+                                <i class="fas fa-envelope"></i> Send Email
+                            </a>
+                            <?php if ($booking['tenant_phone']): ?>
+                            <a href="tel:<?php echo $booking['tenant_phone']; ?>" class="btn btn-outline" style="font-size: 12px; padding: 6px 12px;">
+                                <i class="fas fa-phone"></i> Call
+                            </a>
+                            <?php endif; ?>
+                            <a href="/broker_system/user/chat.php?user=<?php echo $booking['tenant_id']; ?>" class="btn btn-outline" style="font-size: 12px; padding: 6px 12px;">
+                                <i class="fas fa-comment"></i> Chat
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- PAYMENT INFORMATION -->
+                    <?php if ($has_payment): ?>
+                    <div class="payment-status-card">
+                        <h4><i class="fas fa-check-circle"></i> ✅ Payment Received!</h4>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                            <div>
+                                <div class="info-label">Deposit Paid</div>
+                                <div class="info-value" style="color: #059669; font-size: 18px;">
                                     <?php echo formatMoney($booking['deposit_paid']); ?>
                                 </div>
                             </div>
-                            <div class="info-row">
-                                <span class="info-label">Remaining to Collect</span>
-                                <div class="info-value"><?php echo formatMoney($booking['total_amount'] - $booking['deposit_paid']); ?></div>
+                            <div>
+                                <div class="info-label">Commission Paid</div>
+                                <div class="info-value" style="color: #059669; font-size: 18px;">
+                                    <?php echo formatMoney($booking['commission_amount']); ?>
+                                </div>
                             </div>
-                            <?php if ($booking['payment_date']): ?>
-                            <div class="info-row">
-                                <span class="info-label">Payment Date</span>
-                                <div class="info-value"><?php echo date('M d, Y H:i', strtotime($booking['payment_date'])); ?></div>
+                            <div>
+                                <div class="info-label">Total in Escrow</div>
+                                <div class="info-value"><?php echo formatMoney($booking['escrow_held']); ?></div>
                             </div>
-                            <?php endif; ?>
                             <?php if ($booking['payment_code']): ?>
-                            <div class="info-row">
-                                <span class="info-label">Transaction Code</span>
+                            <div>
+                                <div class="info-label">Payment Code</div>
                                 <div class="info-value"><code><?php echo $booking['payment_code']; ?></code></div>
                             </div>
                             <?php endif; ?>
                         </div>
-                        
-                        <!-- Booking Info -->
-                        <div class="info-card">
-                            <div class="info-card-title">
-                                <i class="fas fa-calendar-alt"></i> Booking Details
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Booking Reference</span>
-                                <div class="info-value">#<?php echo $booking['id']; ?></div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Transaction ID</span>
-                                <div class="info-value">#<?php echo $booking['transaction_id']; ?></div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Nights</span>
-                                <div class="info-value"><?php echo $booking['total_nights']; ?> nights</div>
-                            </div>
+                        <?php if ($booking['payment_date']): ?>
+                        <div style="margin-top: 12px; font-size: 11px; color: #065f46;">
+                            <i class="fas fa-clock"></i> Payment confirmed on: <?php echo date('M d, Y H:i', strtotime($booking['payment_date'])); ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php else: ?>
+                    <div class="payment-status-card" style="background: #fef3c7; border-color: #f59e0b;">
+                        <h4 style="color: #92400e;"><i class="fas fa-clock"></i> ⏳ Awaiting Payment</h4>
+                        <p style="font-size: 12px; color: #92400e;">The guest has not completed payment yet. They will pay deposit + commission to secure the booking.</p>
+                        <div class="info-row" style="margin-top: 8px;">
+                            <span class="info-label">Deposit Required:</span>
+                            <span class="info-value"><?php echo formatMoney($booking['deposit_amount']); ?></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Commission:</span>
+                            <span class="info-value"><?php echo formatMoney($booking['commission_amount']); ?></span>
                         </div>
                     </div>
+                    <?php endif; ?>
                     
                     <!-- Dates Section -->
                     <div class="dates-section">
@@ -762,10 +867,23 @@ $conn->close();
                         </div>
                     </div>
                     
+                    <!-- Escrow Information -->
+                    <?php if ($booking['escrow_status'] == 'active'): ?>
+                    <div class="escrow-info">
+                        <i class="fas fa-shield-alt"></i> <strong>🔒 Escrow Protection Active</strong><br>
+                        <small>Funds are held securely in escrow. They will be released after check-out or when you confirm handover.</small>
+                        <?php if ($booking['escrow_release_date']): ?>
+                        <div style="margin-top: 8px;">
+                            <i class="fas fa-clock"></i> Auto-release scheduled: <?php echo date('M d, Y', strtotime($booking['escrow_release_date'])); ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                    
                     <!-- Special Requests -->
                     <?php if (!empty($booking['special_requests'])): ?>
                     <div class="special-requests">
-                        <strong><i class="fas fa-comment-dots"></i> Special Request from Renter:</strong>
+                        <strong><i class="fas fa-comment-dots"></i> 💬 Special Request from Guest:</strong>
                         <p style="margin-top: 8px; font-size: 13px;"><?php echo nl2br(htmlspecialchars($booking['special_requests'])); ?></p>
                     </div>
                     <?php endif; ?>
@@ -775,14 +893,22 @@ $conn->close();
                         <button onclick="viewRenterDetails(<?php echo htmlspecialchars(json_encode($booking)); ?>)" class="btn btn-primary">
                             <i class="fas fa-user-circle"></i> View Full Details
                         </button>
-                        <?php if ($booking['status'] == 'confirmed' && $booking['paid_amount'] > 0): ?>
-                            <button onclick="markAsCompleted(<?php echo $booking['id']; ?>)" class="btn btn-success">
-                                <i class="fas fa-check-double"></i> Mark as Completed
+                        
+                        <?php if ($booking['status'] == 'pending'): ?>
+                            <button onclick="processBooking(<?php echo $booking['id']; ?>, 'approve')" class="btn btn-success">
+                                <i class="fas fa-check-circle"></i> ✅ Approve Booking
+                            </button>
+                            <button onclick="processBooking(<?php echo $booking['id']; ?>, 'reject')" class="btn btn-danger">
+                                <i class="fas fa-times-circle"></i> ❌ Reject Booking
                             </button>
                         <?php endif; ?>
-                        <a href="/broker_system/user/chat.php?user=<?php echo $booking['tenant_id']; ?>" class="btn btn-outline">
-                            <i class="fas fa-comment"></i> Message Renter
-                        </a>
+                        
+                        <?php if ($booking['status'] == 'confirmed' && $has_payment && $booking['handover_confirmed'] != 1): ?>
+                            <button onclick="confirmHandover(<?php echo $booking['id']; ?>)" class="btn btn-success">
+                                <i class="fas fa-key"></i> 🏠 Confirm Handover
+                            </button>
+                        <?php endif; ?>
+                        
                         <a href="/broker_system/user/transaction.php?id=<?php echo $booking['transaction_id']; ?>" class="btn btn-outline">
                             <i class="fas fa-receipt"></i> View Transaction
                         </a>
@@ -815,78 +941,162 @@ $conn->close();
     </div>
 </div>
 
+<!-- Handover Modal -->
+<div id="handoverModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-key"></i> Confirm Handover</h3>
+            <span class="close-modal" onclick="closeHandoverModal()">&times;</span>
+        </div>
+        <form method="POST" action="confirm_handover.php">
+            <input type="hidden" name="booking_id" id="handoverBookingId">
+            <div class="form-group">
+                <label>Handover Notes (Optional)</label>
+                <textarea name="handover_notes" rows="3" placeholder="Add any notes about the handover..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-success" style="width: 100%;">
+                <i class="fas fa-check-circle"></i> Confirm Handover
+            </button>
+        </form>
+    </div>
+</div>
+
 <script>
+let currentBookingId = null;
+
 function viewRenterDetails(booking) {
     const modalContent = document.getElementById('renterDetailsContent');
+    const hasPayment = booking.buyer_deposit_paid > 0 || booking.commission_paid > 0;
+    
     modalContent.innerHTML = `
         <div style="margin-bottom: 20px;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">📋 Personal Information</h4>
+            <h4 style="color: #667eea; margin-bottom: 10px;"><i class="fas fa-user"></i> Personal Information</h4>
             <p><strong>Full Name:</strong> ${escapeHtml(booking.tenant_name)}</p>
             <p><strong>Email:</strong> ${escapeHtml(booking.tenant_email)}</p>
             <p><strong>Phone:</strong> ${escapeHtml(booking.tenant_phone || 'Not provided')}</p>
             <p><strong>Address:</strong> ${escapeHtml(booking.tenant_address || 'Not provided')}</p>
             <p><strong>City:</strong> ${escapeHtml(booking.tenant_city || 'Not provided')}</p>
         </div>
+        
         <div style="margin-bottom: 20px;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">🏠 Booking Information</h4>
+            <h4 style="color: #667eea; margin-bottom: 10px;"><i class="fas fa-home"></i> Booking Information</h4>
             <p><strong>Property:</strong> ${escapeHtml(booking.property_title)}</p>
             <p><strong>Check-in:</strong> ${new Date(booking.check_in_date).toLocaleDateString()}</p>
             <p><strong>Check-out:</strong> ${new Date(booking.check_out_date).toLocaleDateString()}</p>
             <p><strong>Nights:</strong> ${booking.total_nights}</p>
         </div>
+        
         <div style="margin-bottom: 20px;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">💰 Payment Information</h4>
+            <h4 style="color: #667eea; margin-bottom: 10px;"><i class="fas fa-money-bill-wave"></i> Payment Information</h4>
+            ${hasPayment ? `
+                <div style="background: #d1fae5; padding: 12px; border-radius: 12px; margin-bottom: 12px;">
+                    <p><strong>✅ Payment Status:</strong> Payment Received!</p>
+                    <p><strong>Deposit Paid:</strong> ${formatMoney(booking.deposit_paid)}</p>
+                    <p><strong>Commission Paid:</strong> ${formatMoney(booking.commission_amount)}</p>
+                    <p><strong>Total in Escrow:</strong> ${formatMoney(booking.escrow_held)}</p>
+                </div>
+            ` : `
+                <div style="background: #fef3c7; padding: 12px; border-radius: 12px; margin-bottom: 12px;">
+                    <p><strong>⚠️ Payment Status:</strong> Awaiting Payment</p>
+                    <p><strong>Deposit Required:</strong> ${formatMoney(booking.deposit_amount)}</p>
+                    <p><strong>Commission:</strong> ${formatMoney(booking.commission_amount)}</p>
+                </div>
+            `}
             <p><strong>Total Amount:</strong> ${formatMoney(booking.total_amount)}</p>
-            <p><strong>Deposit Paid (in Escrow):</strong> <span style="color: #10b981; font-weight: bold;">${formatMoney(booking.deposit_paid)}</span></p>
-            <p><strong>Platform Commission:</strong> ${formatMoney(booking.commission_amount)}</p>
             <p><strong>You Will Receive:</strong> ${formatMoney(booking.total_amount - booking.commission_amount)}</p>
             ${booking.payment_date ? `<p><strong>Paid on:</strong> ${new Date(booking.payment_date).toLocaleString()}</p>` : ''}
         </div>
+        
         ${booking.special_requests ? `
         <div style="margin-top: 20px; padding: 12px; background: #fef3c7; border-radius: 12px;">
             <strong>💬 Special Request:</strong>
             <p style="margin-top: 8px;">${escapeHtml(booking.special_requests)}</p>
         </div>
         ` : ''}
+        
         <div style="margin-top: 20px; padding: 12px; background: #dbeafe; border-radius: 12px;">
             <strong>ℹ️ Important Information:</strong>
             <p style="margin-top: 8px; font-size: 12px;">
-                • The deposit is held in escrow and will be released after check-out.<br>
-                • You will receive the remaining payment directly from the tenant.<br>
-                • Contact the tenant for any special arrangements.
+                • The deposit is held in escrow and will be released after check-out or when you confirm handover.<br>
+                • You will receive the remaining payment directly from the guest.<br>
+                • Contact the guest for any special arrangements.
             </p>
+        </div>
+        
+        <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+            <a href="mailto:${escapeHtml(booking.tenant_email)}" class="btn btn-primary" style="flex: 1; justify-content: center;">
+                <i class="fas fa-envelope"></i> Send Email
+            </a>
+            <a href="tel:${escapeHtml(booking.tenant_phone)}" class="btn btn-outline" style="flex: 1; justify-content: center;">
+                <i class="fas fa-phone"></i> Call
+            </a>
+            <button onclick="closeRenterModal()" class="btn btn-outline">Close</button>
         </div>
     `;
     document.getElementById('renterModal').style.display = 'flex';
+}
+
+function processBooking(bookingId, action) {
+    if (!confirm(`Are you sure you want to ${action} this booking?`)) return;
+    
+    fetch('/broker_system/user/transaction_actions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: action === 'approve' ? 'approve_booking' : 'reject_booking',
+            transaction_id: bookingId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function confirmHandover(bookingId) {
+    if (!confirm('Confirm that you have handed over the property to the guest? The deposit will be released after guest confirmation.')) return;
+    
+    fetch('/broker_system/user/transaction_actions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'confirm_handover',
+            transaction_id: bookingId,
+            notes: 'Property handed over to guest'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Handover confirmed! Waiting for guest confirmation to release deposit.');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
 }
 
 function closeRenterModal() {
     document.getElementById('renterModal').style.display = 'none';
 }
 
-function markAsCompleted(bookingId) {
-    if (confirm('Mark this booking as completed? This will release the escrow payment to you.')) {
-        fetch('/broker_system/api/complete_booking.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ booking_id: bookingId })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('✓ Booking marked as completed! Payment has been released to your wallet.');
-                location.reload();
-            } else {
-                alert('Error: ' + data.error);
-            }
-        })
-        .catch(error => {
-            alert('Error: ' + error);
-        });
-    }
+function closeHandoverModal() {
+    document.getElementById('handoverModal').style.display = 'none';
 }
 
 function formatMoney(amount) {
+    if (!amount) return '0.00 ETB';
     return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + ' ETB';
 }
 
@@ -899,10 +1109,19 @@ function escapeHtml(text) {
 
 window.onclick = function(event) {
     const modal = document.getElementById('renterModal');
+    const handoverModal = document.getElementById('handoverModal');
     if (event.target === modal) {
         modal.style.display = 'none';
     }
+    if (event.target === handoverModal) {
+        handoverModal.style.display = 'none';
+    }
 }
+
+// Auto-refresh every 30 seconds
+setInterval(function() {
+    location.reload();
+}, 30000);
 </script>
 
 <?php
