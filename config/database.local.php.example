@@ -1,0 +1,7 @@
+<?php
+// Copy this file to database.local.php (same folder) and set your XAMPP MySQL credentials.
+
+$dbHost = 'localhost';
+$dbUser = 'root';
+$dbPass = 'your_mysql_password_here';
+$dbName = 'brokersystem';
