@@ -1,6 +1,31 @@
 <?php
 // user/pay_rent.php - Complete with Availability Reservation System
-// FIXED: Remaining balance payment now works exactly like deposit payment
+
+// ============================================
+// DEBUGGING - Add at the very top
+// ============================================
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+
+// Create a simple debug file
+$simple_debug = __DIR__ . '/simple_debug.log';
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - pay_rent.php loaded\n", FILE_APPEND);
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - GET params: " . print_r($_GET, true) . "\n", FILE_APPEND);
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - POST params: " . print_r($_POST, true) . "\n", FILE_APPEND);
+
+// require_once '../config/database.php';
+// require_once '../includes/functions.php';
+// require_once '../includes/auth.php';
+// require_once '../includes/transaction_workflow.php';
+// require_once '../includes/AvailabilityManager.php';
+
+// Rest of your code continues...
+
+
+
+// user/pay_rent.php - Complete with Availability Reservation System
+// FIXED: Correct variable ordering for remaining balance payment
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -29,7 +54,8 @@ debug_log("Transaction ID: " . ($_GET['transaction_id'] ?? 'NOT SET'));
 
 // Check login FIRST
 requireLogin();
-
+// DEBUG: Confirm we reached this point
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - After requireLogin(), user_id: " . ($_SESSION['user_id'] ?? 'not set') . "\n", FILE_APPEND);
 // Start output buffering
 $page_title = 'Complete Payment';
 ob_start();
@@ -46,7 +72,7 @@ if (!$conn) {
 
 debug_log("Database connection established");
 
-// Get user and transaction info
+// Get user and transaction info FIRST
 $user_id = $_SESSION['user_id'];
 $transaction_id = isset($_GET['transaction_id']) ? intval($_GET['transaction_id']) : 0;
 $error = '';
@@ -59,6 +85,38 @@ if ($transaction_id <= 0) {
     debug_log("ERROR: Invalid transaction ID");
     header('Location: dashboard.php');
     exit;
+}
+
+// ============================================
+// NOW check remaining payment mode (AFTER variables are defined)
+// ============================================
+$pay_remaining_mode = (isset($_GET['pay']) && $_GET['pay'] === 'remaining');
+
+if ($pay_remaining_mode) {
+    debug_log("Remaining balance payment mode activated");
+    
+    // Verify both parties confirmed delivery
+    $delivery_check = $conn->query("
+        SELECT seller_delivery_confirmed, buyer_delivery_confirmed 
+        FROM transactions 
+        WHERE id = $transaction_id AND buyer_id = $user_id
+    ");
+    
+    if ($delivery_check && $delivery_check->num_rows > 0) {
+        $delivery_data = $delivery_check->fetch_assoc();
+        if (!$delivery_data['seller_delivery_confirmed'] || !$delivery_data['buyer_delivery_confirmed']) {
+            $error = "Cannot pay remaining balance until both parties confirm delivery.";
+            $pay_remaining_mode = false;
+            debug_log("Delivery not confirmed - Seller: {$delivery_data['seller_delivery_confirmed']}, Buyer: {$delivery_data['buyer_delivery_confirmed']}");
+        } else {
+            $payment_code_type = 'remaining_balance';
+            $page_title = 'Pay Remaining Balance';
+            debug_log("Remaining balance mode confirmed");
+        }
+    } else {
+        $error = "Transaction not found";
+        $pay_remaining_mode = false;
+    }
 }
 
 // Check what columns exist in listings table
@@ -147,9 +205,6 @@ $check_in_date = !empty($transaction['check_in_date']) && $transaction['check_in
 $check_out_date = !empty($transaction['check_out_date']) && $transaction['check_out_date'] != '0000-00-00' 
     ? date('F d, Y', strtotime($transaction['check_out_date'])) 
     : 'Not specified';
-
-// Determine payment mode
-$pay_remaining_mode = (isset($_GET['pay']) && $_GET['pay'] === 'remaining');
 
 // Check if both parties have confirmed delivery
 $both_confirmed_delivery = ($transaction['seller_delivery_confirmed'] == 1 && $transaction['buyer_delivery_confirmed'] == 1);
@@ -428,6 +483,7 @@ $conn->close();
 debug_log("Page rendering completed");
 ?>
 
+<!-- Rest of your HTML/CSS/JS remains exactly the same -->
 <style>
     :root {
         --primary: #667eea;
@@ -886,7 +942,6 @@ let timeLeft = <?php echo max(0, $time_left); ?>;
 
 function copyCode() {
     navigator.clipboard.writeText(paymentCode);
-    // Show temporary notification
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
@@ -1007,7 +1062,6 @@ function checkPaymentStatus() {
 timerInterval = setInterval(updateTimer, 1000);
 checkInterval = setInterval(checkPaymentStatus, 3000);
 
-// Add CSS animation for notification
 const style = document.createElement('style');
 style.textContent = `
     @keyframes slideIn {

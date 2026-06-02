@@ -1,0 +1,106 @@
+2026-06-02 20:31:38 - pay_rent.php loaded
+2026-06-02 20:31:38 - GET params: Array
+(
+    [id] => 92
+)
+
+2026-06-02 20:31:38 - POST params: Array
+(
+)
+
+2026-06-02 20:31:44 - pay_rent.php loaded
+2026-06-02 20:31:44 - GET params: Array
+(
+    [id] => 92
+)
+
+2026-06-02 20:31:44 - POST params: Array
+(
+)
+
+2026-06-02 20:31:49 - pay_rent.php loaded
+2026-06-02 20:31:49 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:31:49 - POST params: Array
+(
+)
+
+2026-06-02 20:31:51 - pay_rent.php loaded
+2026-06-02 20:31:51 - GET params: Array
+(
+    [transaction_id] => 91
+    [pay] => remaining
+)
+
+2026-06-02 20:31:51 - POST params: Array
+(
+)
+
+2026-06-02 20:31:51 - After requireLogin(), user_id: 21
+2026-06-02 20:32:14 - pay_rent.php loaded
+2026-06-02 20:32:14 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:32:14 - POST params: Array
+(
+)
+
+2026-06-02 20:32:19 - pay_rent.php loaded
+2026-06-02 20:32:19 - GET params: Array
+(
+    [transaction_id] => 91
+    [pay] => remaining
+)
+
+2026-06-02 20:32:19 - POST params: Array
+(
+)
+
+2026-06-02 20:32:19 - After requireLogin(), user_id: 21
+2026-06-02 20:32:48 - pay_rent.php loaded
+2026-06-02 20:32:48 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:32:48 - POST params: Array
+(
+)
+
+2026-06-02 20:33:27 - pay_rent.php loaded
+2026-06-02 20:33:27 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:33:27 - POST params: Array
+(
+    [action] => mark_delivered
+    [delivery_notes] => I have given the car to Biniam
+)
+
+2026-06-02 20:34:31 - pay_rent.php loaded
+2026-06-02 20:34:31 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:34:31 - POST params: Array
+(
+)
+
+2026-06-02 20:35:05 - pay_rent.php loaded
+2026-06-02 20:35:05 - GET params: Array
+(
+    [id] => 91
+)
+
+2026-06-02 20:35:05 - POST params: Array
+(
+)
+

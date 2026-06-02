@@ -1,0 +1,1330 @@
+2026-06-02 20:12:29 - ========== API CALLED ==========
+2026-06-02 20:12:29 - Action: not set
+2026-06-02 20:12:29 - POST data: Array
+(
+)
+
+2026-06-02 20:12:29 - GET data: Array
+(
+)
+
+2026-06-02 20:12:29 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:12:29 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:12:29 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:12:29 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:12:29 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:12:29 - Generated new payment code: 17001
+2026-06-02 20:14:35 - ========== API CALLED ==========
+2026-06-02 20:14:35 - Action: not set
+2026-06-02 20:14:35 - POST data: Array
+(
+)
+
+2026-06-02 20:14:35 - GET data: Array
+(
+)
+
+2026-06-02 20:14:35 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:14:35 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:14:35 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:14:35 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:14:35 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:14:35 - Generated new payment code: 17056
+2026-06-02 20:21:00 - ========== API CALLED ==========
+2026-06-02 20:21:00 - Action: not set
+2026-06-02 20:21:00 - POST data: Array
+(
+)
+
+2026-06-02 20:21:00 - GET data: Array
+(
+)
+
+2026-06-02 20:21:00 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:00 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:00 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:00 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:00 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:00 - Generated new payment code: 43976
+2026-06-02 20:21:01 - ========== API CALLED ==========
+2026-06-02 20:21:01 - Action: not set
+2026-06-02 20:21:01 - POST data: Array
+(
+)
+
+2026-06-02 20:21:01 - GET data: Array
+(
+)
+
+2026-06-02 20:21:01 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:01 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:01 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:01 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:01 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:01 - Generated new payment code: 36767
+2026-06-02 20:21:01 - ========== API CALLED ==========
+2026-06-02 20:21:01 - Action: not set
+2026-06-02 20:21:01 - POST data: Array
+(
+)
+
+2026-06-02 20:21:01 - GET data: Array
+(
+)
+
+2026-06-02 20:21:01 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:01 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:01 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:01 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:01 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:01 - Generated new payment code: 23761
+2026-06-02 20:21:01 - ========== API CALLED ==========
+2026-06-02 20:21:01 - Action: not set
+2026-06-02 20:21:01 - POST data: Array
+(
+)
+
+2026-06-02 20:21:01 - GET data: Array
+(
+)
+
+2026-06-02 20:21:01 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:01 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:01 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:01 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:01 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:01 - Generated new payment code: 07769
+2026-06-02 20:21:02 - ========== API CALLED ==========
+2026-06-02 20:21:02 - Action: not set
+2026-06-02 20:21:02 - POST data: Array
+(
+)
+
+2026-06-02 20:21:02 - GET data: Array
+(
+)
+
+2026-06-02 20:21:02 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:02 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:02 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:02 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:02 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:02 - Generated new payment code: 46474
+2026-06-02 20:21:02 - ========== API CALLED ==========
+2026-06-02 20:21:02 - Action: not set
+2026-06-02 20:21:02 - POST data: Array
+(
+)
+
+2026-06-02 20:21:02 - GET data: Array
+(
+)
+
+2026-06-02 20:21:02 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:02 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:02 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:02 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:02 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:02 - Generated new payment code: 37064
+2026-06-02 20:21:02 - ========== API CALLED ==========
+2026-06-02 20:21:02 - Action: not set
+2026-06-02 20:21:02 - POST data: Array
+(
+)
+
+2026-06-02 20:21:02 - GET data: Array
+(
+)
+
+2026-06-02 20:21:02 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:02 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:02 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:02 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:02 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:02 - Generated new payment code: 55290
+2026-06-02 20:21:02 - ========== API CALLED ==========
+2026-06-02 20:21:02 - Action: not set
+2026-06-02 20:21:02 - POST data: Array
+(
+)
+
+2026-06-02 20:21:02 - GET data: Array
+(
+)
+
+2026-06-02 20:21:02 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:02 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:02 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:02 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:02 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:02 - Generated new payment code: 44019
+2026-06-02 20:21:02 - ========== API CALLED ==========
+2026-06-02 20:21:02 - Action: not set
+2026-06-02 20:21:02 - POST data: Array
+(
+)
+
+2026-06-02 20:21:02 - GET data: Array
+(
+)
+
+2026-06-02 20:21:02 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:02 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:02 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:02 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:02 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:02 - Generated new payment code: 94985
+2026-06-02 20:21:03 - ========== API CALLED ==========
+2026-06-02 20:21:03 - Action: not set
+2026-06-02 20:21:03 - POST data: Array
+(
+)
+
+2026-06-02 20:21:03 - GET data: Array
+(
+)
+
+2026-06-02 20:21:03 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:03 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:03 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:03 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:03 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:03 - Generated new payment code: 89987
+2026-06-02 20:21:03 - ========== API CALLED ==========
+2026-06-02 20:21:03 - Action: not set
+2026-06-02 20:21:03 - POST data: Array
+(
+)
+
+2026-06-02 20:21:03 - GET data: Array
+(
+)
+
+2026-06-02 20:21:03 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:03 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:03 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:03 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:03 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:03 - Generated new payment code: 96930
+2026-06-02 20:21:20 - ========== API CALLED ==========
+2026-06-02 20:21:20 - Action: not set
+2026-06-02 20:21:20 - POST data: Array
+(
+)
+
+2026-06-02 20:21:20 - GET data: Array
+(
+)
+
+2026-06-02 20:21:20 - Decoded input: Array
+(
+    [action] => pay_remaining
+    [transaction_id] => 91
+)
+
+2026-06-02 20:21:20 - Action: pay_remaining, Transaction ID: 91, User ID: 21
+2026-06-02 20:21:20 - === PAY REMAINING ACTION STARTED ===
+2026-06-02 20:21:20 - Transaction found: Array
+(
+    [id] => 91
+    [listing_id] => 33
+    [buyer_id] => 21
+    [seller_id] => 5
+    [total_amount] => 4200000.00
+    [deposit_amount] => 1260000.00
+    [commission_amount] => 630000.00
+    [remaining_balance] => 2310000.00
+    [amount_paid] => 1890000.00
+    [payment_status] => deposit_paid
+    [funds_status] => pending
+    [status] => completed
+    [payment_code_5digit] => 
+    [code_expires_at] => 2026-06-02 21:06:32
+    [escrow_held] => 3780000.00
+    [created_at] => 2026-06-02 20:43:05
+    [updated_at] => 2026-06-02 21:06:32
+    [completed_at] => 2026-06-02 21:06:32
+    [buyer_confirmed] => 0
+    [seller_confirmed] => 0
+    [escrow_released] => 0
+    [admin_processed] => 0
+    [buyer_legal_confirmed] => 0
+    [seller_legal_confirmed] => 0
+    [legal_documents] => 
+    [legal_notes] => 
+    [buyer_delivery_confirmed] => 1
+    [seller_delivery_confirmed] => 1
+    [deposit_paid] => 0
+    [remaining_paid] => 0
+    [payment_stage] => deposit_only
+    [escrow_status] => released
+    [escrow_release_date] => 2026-06-07 19:43:27
+    [auto_release_days] => 5
+    [buyer_confirmed_at] => 2026-06-02 21:06:32
+    [seller_confirmed_at] => 2026-06-02 21:04:55
+    [payment_released_at] => 2026-06-02 21:06:32
+    [admin_frozen] => 0
+    [frozen_reason] => 
+    [release_method] => auto
+    [escrow_release_method] => dual_confirm
+    [delivery_status] => pending
+    [delivered_at] => 
+    [confirmed_at] => 2026-06-02 21:06:32
+    [listing_type] => 
+    [employer_id] => 
+    [worker_id] => 
+    [hired_at] => 
+    [work_submitted_at] => 
+    [work_approved_at] => 
+    [work_rejected_at] => 
+    [rejection_reason] => 
+    [full_payment_paid] => 0
+    [full_payment_paid_at] => 
+    [handover_confirmed] => 0
+    [handover_confirmed_at] => 
+    [delivery_proof] => 
+    [work_link] => 
+    [work_description] => 
+    [worker_completed] => 0
+    [employer_completed] => 0
+    [payment_requested_at] => 
+    [approved_at] => 
+    [accepted_at] => 
+    [funds_released_at] => 
+    [reservation_status] => 
+    [reserved_at] => 
+    [reserved_by] => 
+    [released_at] => 
+    [released_by] => 
+    [release_notes] => 
+)
+
+2026-06-02 20:21:20 - Total: 4200000, Deposit Paid: 1890000, Remaining Paid: 0, Balance Due: 2310000
+2026-06-02 20:21:20 - Generated new payment code: 78900

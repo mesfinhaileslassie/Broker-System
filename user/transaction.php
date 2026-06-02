@@ -1,11 +1,37 @@
 <?php
 // user/transaction.php - Complete Transaction Page with Escrow and Seller Notifications
+// FIXED: Database connection handling and Pay Remaining functionality
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/escrow_functions.php';
 require_once '../includes/transaction_workflow.php';
+
+
+
+// user/pay_rent.php - Complete with Availability Reservation System
+
+// ============================================
+// DEBUGGING - Add at the very top
+// ============================================
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+
+// Create a simple debug file
+$simple_debug = __DIR__ . '/simple_debug.log';
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - pay_rent.php loaded\n", FILE_APPEND);
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - GET params: " . print_r($_GET, true) . "\n", FILE_APPEND);
+file_put_contents($simple_debug, date('Y-m-d H:i:s') . " - POST params: " . print_r($_POST, true) . "\n", FILE_APPEND);
+
+require_once '../config/database.php';
+require_once '../includes/functions.php';
+require_once '../includes/auth.php';
+require_once '../includes/transaction_workflow.php';
+require_once '../includes/AvailabilityManager.php';
+
+// Rest of your code continues...
 
 requireLogin();
 
@@ -36,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $confirm_notes = $_POST['confirm_notes'] ?? '';
         $result = confirmReceiptAndRelease($conn, $transaction_id, $user_id, $confirm_notes);
         if ($result['success']) {
-            $message = "✓ Payment released! Funds have been sent to the seller.";
+            $message = "✓ Delivery confirmed! You can now pay the remaining balance.";
         } else {
             $error = $result['error'];
         }
@@ -76,18 +102,23 @@ if ($workflow) {
     $transaction = array_merge($transaction, $workflow);
 }
 
-// Get escrow data
-$escrow_data = $conn->query("
-    SELECT ea.amount as escrow_amount, ea.status as escrow_account_status,
-           eq.scheduled_release_date
-    FROM escrow_accounts ea
-    LEFT JOIN escrow_release_queue eq ON ea.transaction_id = eq.transaction_id AND eq.status = 'pending'
-    WHERE ea.transaction_id = $transaction_id AND ea.status = 'held'
-    LIMIT 1
-")->fetch_assoc();
+// Get payment totals - DO THIS BEFORE CLOSING CONNECTION
+$buyerDepositPaid = (float) ($conn->query("
+    SELECT COALESCE(SUM(amount), 0) AS total FROM payments
+    WHERE transaction_id = $transaction_id AND type = 'deposit_buyer' AND status = 'confirmed'
+")->fetch_assoc()['total'] ?? 0);
 
-// Get payment history
-$payments = $conn->query("
+$remainingPaid = (float) ($conn->query("
+    SELECT COALESCE(SUM(amount), 0) AS total FROM payments
+    WHERE transaction_id = $transaction_id AND type = 'remaining_balance' AND status = 'confirmed'
+")->fetch_assoc()['total'] ?? 0);
+
+$totalPaid = $buyerDepositPaid + $remainingPaid;
+$totalAmount = floatval($transaction['total_amount']);
+$remainingBalance = max(0, $totalAmount - $buyerDepositPaid - $remainingPaid);
+
+// Get payment history - DO THIS BEFORE CLOSING CONNECTION
+$payments_list = $conn->query("
     SELECT * FROM payments 
     WHERE transaction_id = $transaction_id AND status = 'confirmed' 
     ORDER BY created_at DESC
@@ -96,59 +127,22 @@ $payments = $conn->query("
 $is_buyer = ($transaction['buyer_id'] == $user_id);
 $is_seller = ($transaction['seller_id'] == $user_id);
 
+// Check delivery confirmation status
+$seller_confirmed = ($transaction['seller_delivery_confirmed'] == 1);
+$buyer_confirmed = ($transaction['buyer_delivery_confirmed'] == 1);
+$both_confirmed = ($seller_confirmed && $buyer_confirmed);
+
+// Determine if remaining payment is available
+$can_pay_remaining = ($is_buyer && $both_confirmed && $remainingBalance > 0 && $remainingPaid == 0);
+
 // Calculate amounts
 $depositPercent = $transaction['admin_deposit_percent'] ?? 30;
 $commissionPercent = $transaction['admin_commission_percent'] ?? 15;
-$depositAmount = $transaction['total_amount'] * ($depositPercent / 100);
-$commissionAmount = $transaction['total_amount'] * ($commissionPercent / 100);
-$buyerRequired = $depositAmount + $commissionAmount;
-$sellerRequired = $depositAmount;
+$depositAmount = $totalAmount * ($depositPercent / 100);
+$commissionAmount = $totalAmount * ($commissionPercent / 100);
 
-// Get payment totals
-$buyerPaid = (float) ($conn->query("
-    SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-    WHERE transaction_id = $transaction_id AND type IN ('deposit_buyer', 'commission') AND status = 'confirmed'
-")->fetch_assoc()['total'] ?? 0);
-$sellerPaid = (float) ($conn->query("
-    SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-    WHERE transaction_id = $transaction_id AND type = 'deposit_seller' AND status = 'confirmed'
-")->fetch_assoc()['total'] ?? 0);
-$remainingPaid = (float) ($conn->query("
-    SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-    WHERE transaction_id = $transaction_id AND type = 'remaining_balance' AND status = 'confirmed'
-")->fetch_assoc()['total'] ?? 0);
-
-$listing_type = $transaction['listing_type'] ?? 'product';
-$depositPaidDisplay = (float) ($transaction['amount_paid'] ?? 0);
-$remainingBalanceDisplay = (float) ($transaction['remaining_balance'] ?? 0);
-$payment_status_label = $transaction['payment_status'] ?? 'pending';
-$funds_status_label = $transaction['funds_status'] ?? ($transaction['escrow_status'] ?? 'pending');
-$seller_confirmed = (bool) ($transaction['seller_confirmed'] ?? 0) || ($transaction['delivery_status'] ?? '') === 'delivered';
-$buyer_confirmed = (bool) ($transaction['buyer_confirmed'] ?? 0);
-$is_frozen = ($transaction['admin_frozen'] == 1);
-$is_completed = ($transaction['status'] == 'completed');
-$is_disputed = ($transaction['status'] == 'disputed' || $funds_status_label === 'disputed');
-
-// Store payments for template (avoid using mysqli after close)
-$payments_list = [];
-if ($payments && $payments->num_rows > 0) {
-    while ($p = $payments->fetch_assoc()) {
-        $payments_list[] = $p;
-    }
-}
-
-// Determine button states
-$escrow_active = in_array($funds_status_label, ['held_in_escrow', 'seller_confirmed', 'buyer_confirmed', 'ready_for_release'], true)
-    || ($transaction['escrow_status'] ?? '') === 'active';
-$payment_received = ($escrow_active && !$is_completed && $depositPaidDisplay > 0);
-$can_mark_delivery = ($is_seller && $payment_received && !$seller_confirmed && !$is_disputed && !$is_frozen);
-$can_confirm_receipt = ($is_buyer && $seller_confirmed && !$buyer_confirmed && !$is_disputed && !$is_frozen && !$is_completed);
-$can_open_dispute = ($is_buyer && $payment_received && !$is_completed && !$is_disputed);
-$can_pay_remaining = $is_buyer
-    && $payment_status_label !== 'fully_paid'
-    && $remainingBalanceDisplay > 0
-    && !$is_completed
-    && !$is_disputed;
+// Close connection AFTER all queries are done
+$conn->close();
 ?>
 
 <style>
@@ -198,7 +192,6 @@ $can_pay_remaining = $is_buyer
     .status-delivered { background: #fed7aa; color: #9a3412; }
     .status-completed { background: #d1fae5; color: #059669; }
     .status-disputed { background: #fee2e2; color: #dc2626; }
-    .status-frozen { background: #f1f5f9; color: #64748b; }
     
     .info-grid {
         display: grid;
@@ -211,49 +204,27 @@ $can_pay_remaining = $is_buyer
     .info-label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
     .info-value { font-size: 16px; font-weight: 700; color: #0f172a; }
     
-    .escrow-box {
-        background: linear-gradient(135deg, #667eea10, #764ba210);
+    /* Delivery Confirmation Cards */
+    .delivery-card {
+        background: #f8fafc;
         border-radius: 20px;
         padding: 20px;
-        margin: 16px 0;
-        border: 1px solid #667eea30;
+        margin-bottom: 20px;
+        border-left: 4px solid #667eea;
     }
     
-    /* Payment Received Card - For Seller */
-    .payment-received-card {
-        background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-        border: 2px solid #10b981;
-        border-radius: 24px;
-        padding: 24px;
-        margin-bottom: 24px;
+    .delivery-card.confirmed {
+        background: #d1fae5;
+        border-left-color: #10b981;
     }
     
-    .payment-received-header {
+    .delivery-card h4 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-        color: #065f46;
-    }
-    
-    .payment-received-header i {
-        font-size: 32px;
-    }
-    
-    .payment-received-header h2 {
-        font-size: 20px;
-        font-weight: 700;
-    }
-    
-    .buyer-details {
-        background: white;
-        border-radius: 16px;
-        padding: 16px;
-        margin: 16px 0;
-    }
-    
-    .buyer-details p {
-        margin: 8px 0;
+        gap: 10px;
     }
     
     .btn-group { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
@@ -277,28 +248,11 @@ $can_pay_remaining = $is_buyer
     .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
     .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     
-    .delivery-section {
-        background: #f0f9ff;
-        border: 2px solid #667eea;
-        border-radius: 20px;
-        padding: 24px;
-        margin-bottom: 24px;
-    }
-    
-    .delivery-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: #1e40af;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    
     .alert { padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
     .alert-success { background: #d1fae5; color: #059669; border-left: 4px solid #059669; }
     .alert-error { background: #fee2e2; color: #dc2626; border-left: 4px solid #dc2626; }
     .alert-info { background: #dbeafe; color: #1e40af; border-left: 4px solid #1e40af; }
+    .alert-warning { background: #fed7aa; color: #9a3412; border-left: 4px solid #f59e0b; }
     
     .modal {
         display: none;
@@ -323,15 +277,42 @@ $can_pay_remaining = $is_buyer
     .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
     .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; }
     
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-    th { font-weight: 600; color: #64748b; }
+    .remaining-payment-box {
+        background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+        border: 2px solid #10b981;
+        border-radius: 20px;
+        padding: 20px;
+        margin-top: 20px;
+        text-align: center;
+    }
+    
+    .remaining-amount {
+        font-size: 28px;
+        font-weight: 800;
+        color: #059669;
+        margin: 10px 0;
+    }
+    
+    .payment-history-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .payment-history-table th, 
+    .payment-history-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .payment-history-table th {
+        font-weight: 600;
+        color: #64748b;
+        background: #f8fafc;
+    }
     
     @media (max-width: 768px) {
         .info-grid { grid-template-columns: 1fr; }
         .btn-group { flex-direction: column; }
         .btn { justify-content: center; }
-        .buyer-details { padding: 12px; }
     }
 </style>
 
@@ -350,32 +331,23 @@ $can_pay_remaining = $is_buyer
         <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo $error; ?></div>
     <?php endif; ?>
     
-    <?php if ($is_frozen): ?>
-        <div class="alert alert-info">
-            <i class="fas fa-ice-cream"></i> 
-            This transaction has been frozen by admin. Reason: <?php echo htmlspecialchars($transaction['frozen_reason'] ?? 'Not specified'); ?>
-        </div>
-    <?php endif; ?>
-    
     <!-- Status Overview -->
     <div class="card">
         <div class="card-header">
             <h3><i class="fas fa-chart-line"></i> Status Overview</h3>
             <span class="status-badge <?php 
-                if ($is_completed) echo 'status-completed';
-                elseif ($is_disputed) echo 'status-disputed';
-                elseif ($is_frozen) echo 'status-frozen';
-                elseif ($transaction['delivery_status'] == 'delivered') echo 'status-delivered';
-                elseif ($escrow_active) echo 'status-active';
+                if ($remainingPaid > 0) echo 'status-completed';
+                elseif ($both_confirmed) echo 'status-active';
+                elseif ($seller_confirmed) echo 'status-delivered';
+                elseif ($buyerDepositPaid > 0) echo 'status-active';
                 else echo 'status-active';
             ?>">
                 <?php 
-                if ($is_completed) echo '✓ Completed';
-                elseif ($is_disputed) echo '⚠️ Disputed';
-                elseif ($is_frozen) echo '❄️ Frozen';
-                elseif ($transaction['delivery_status'] == 'delivered') echo '📦 Delivered - Awaiting Confirmation';
-                elseif ($escrow_active) echo '💰 Escrow Active';
-                else echo '📋 Pending';
+                if ($remainingPaid > 0) echo '✓ Fully Paid';
+                elseif ($both_confirmed) echo '✓ Delivery Confirmed - Ready for Payment';
+                elseif ($seller_confirmed) echo '📦 Delivered - Awaiting Your Confirmation';
+                elseif ($buyerDepositPaid > 0) echo '💰 Deposit Paid - Awaiting Delivery';
+                else echo '📋 Pending Payment';
                 ?>
             </span>
         </div>
@@ -383,178 +355,114 @@ $can_pay_remaining = $is_buyer
         <div class="info-grid">
             <div class="info-item">
                 <div class="info-label">Total Price</div>
-                <div class="info-value"><?php echo formatMoney($transaction['total_amount']); ?></div>
+                <div class="info-value"><?php echo formatMoney($totalAmount); ?></div>
             </div>
             <div class="info-item">
-                <div class="info-label">Amount Paid</div>
-                <div class="info-value"><?php echo formatMoney($depositPaidDisplay); ?></div>
+                <div class="info-label">Deposit Paid</div>
+                <div class="info-value"><?php echo formatMoney($buyerDepositPaid); ?></div>
             </div>
             <div class="info-item">
                 <div class="info-label">Remaining Balance</div>
-                <div class="info-value"><?php echo formatMoney($remainingBalanceDisplay); ?></div>
+                <div class="info-value"><?php echo formatMoney($remainingBalance); ?></div>
             </div>
             <div class="info-item">
-                <div class="info-label">Payment Status</div>
-                <div class="info-value"><?php echo htmlspecialchars(str_replace('_', ' ', $payment_status_label)); ?></div>
-            </div>
-            <div class="info-item">
-                <div class="info-label">Funds Status</div>
-                <div class="info-value"><?php echo htmlspecialchars(str_replace('_', ' ', $funds_status_label)); ?></div>
-            </div>
-            <div class="info-item">
-                <div class="info-label">Escrow Held</div>
-                <div class="info-value"><?php echo formatMoney($escrow_data['escrow_amount'] ?? $transaction['escrow_held'] ?? 0); ?></div>
-            </div>
-        </div>
-
-        <?php if ($can_pay_remaining): ?>
-        <div style="margin-top:16px;padding:16px;background:#ecfdf5;border:1px solid #10b981;border-radius:16px;">
-            <p style="margin-bottom:12px;color:#065f46;font-size:14px;">
-                <i class="fas fa-wallet"></i>
-                You can pay the remaining balance of <?php echo formatMoney($remainingBalanceDisplay); ?> to complete this purchase.
-            </p>
-            <button type="button" class="btn btn-success pay-remaining-txn-btn" data-transaction-id="<?php echo $transaction_id; ?>">
-                <i class="fas fa-credit-card"></i> Pay Remaining Balance
-            </button>
-            <p id="payRemainingTxnError" style="color:#dc2626;font-size:12px;margin-top:8px;display:none;"></p>
-        </div>
-        <?php elseif ($payment_status_label === 'fully_paid'): ?>
-        <p style="margin-top:12px;padding:12px;background:#d1fae5;border-radius:12px;color:#065f46;font-weight:600;">
-            <i class="fas fa-check-circle"></i> Fully Paid
-        </p>
-        <?php endif; ?>
-
-        <?php if ($seller_confirmed && !$buyer_confirmed && $is_buyer): ?>
-        <p style="margin-top:12px;color:#1e40af;font-size:13px;"><i class="fas fa-hourglass-half"></i> Seller confirmed delivery — please confirm receipt to release funds.</p>
-        <?php elseif ($buyer_confirmed && !$seller_confirmed && $is_seller): ?>
-        <p style="margin-top:12px;color:#1e40af;font-size:13px;"><i class="fas fa-hourglass-half"></i> Waiting for buyer confirmation.</p>
-        <?php endif; ?>
-        
-        <?php if (!empty($escrow_data['scheduled_release_date']) && !$is_completed): ?>
-            <div class="escrow-box">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                    <div>
-                        <i class="fas fa-clock"></i>
-                        <strong>Auto-Release Schedule:</strong><br>
-                        <small>Funds will automatically release to seller on <?php echo date('F d, Y', strtotime($escrow_data['scheduled_release_date'])); ?></small>
-                    </div>
-                    <div style="background: #fef3c7; padding: 8px 16px; border-radius: 40px; color: #92400e; font-weight: 600;">
-                        <?php
-                        $days_left = ceil((strtotime($escrow_data['scheduled_release_date']) - time()) / 86400);
-                        echo max(0, (int) $days_left) . ' days remaining';
-                        ?>
-                    </div>
+                <div class="info-label">Status</div>
+                <div class="info-value">
+                    <?php if ($remainingPaid > 0): ?>
+                        Fully Paid ✓
+                    <?php elseif ($both_confirmed): ?>
+                        Ready for Remaining Payment
+                    <?php elseif ($seller_confirmed): ?>
+                        Waiting for Your Confirmation
+                    <?php elseif ($buyerDepositPaid > 0): ?>
+                        Waiting for Seller Delivery
+                    <?php else: ?>
+                        Awaiting Deposit
+                    <?php endif; ?>
                 </div>
             </div>
-        <?php endif; ?>
-
-        <?php
-        $type_labels = [
-            'product' => 'Product',
-            'rental' => 'Rental',
-            'job' => 'Job',
-        ];
-        ?>
-        <p style="font-size: 12px; color: #64748b; margin-top: 12px;">
-            <i class="fas fa-tag"></i>
-            <?php echo htmlspecialchars($type_labels[$listing_type] ?? ucfirst($listing_type)); ?> transaction
-        </p>
+        </div>
     </div>
     
-    <!-- PAYMENT RECEIVED CARD - FOR SELLER (Important Notification) -->
-    <?php if ($is_seller && $payment_received && !$is_completed): ?>
-    <div class="payment-received-card">
-        <div class="payment-received-header">
-            <i class="fas fa-money-bill-wave"></i>
-            <h2>💰 Payment Received - Escrow Active!</h2>
-        </div>
-        <p style="color: #065f46; margin-bottom: 16px;">The buyer has paid successfully. Funds are now held securely in escrow.</p>
-        
-        <div class="buyer-details">
-            <p><strong><i class="fas fa-user"></i> Buyer Information:</strong></p>
-            <p>📛 Name: <?php echo htmlspecialchars($transaction['buyer_name']); ?></p>
-            <p>📧 Email: <?php echo htmlspecialchars($transaction['buyer_email']); ?></p>
-            <p>📞 Phone: <?php echo htmlspecialchars($transaction['buyer_phone'] ?? 'Not provided'); ?></p>
-            <hr style="margin: 12px 0;">
-            <p><strong>💰 Amount in Escrow:</strong> <?php echo formatMoney($transaction['escrow_held']); ?></p>
-            <p><strong>🔒 Status:</strong> Funds secured - Awaiting delivery</p>
+    <!-- Delivery Confirmation Section -->
+    <?php if ($buyerDepositPaid > 0 && !$remainingPaid): ?>
+    <div class="card">
+        <div class="card-header">
+            <h3><i class="fas fa-truck"></i> Delivery Status</h3>
         </div>
         
-        <div class="btn-group">
-            <a href="chat.php?user=<?php echo $transaction['buyer_id']; ?>" class="btn btn-primary">
-                <i class="fas fa-comment"></i> Contact Buyer
-            </a>
-            <button onclick="openDeliveryModal()" class="btn btn-success">
+        <!-- Seller Confirmation Status -->
+        <div class="delivery-card <?php echo $seller_confirmed ? 'confirmed' : ''; ?>">
+            <h4>
+                <?php if ($seller_confirmed): ?>
+                    <i class="fas fa-check-circle" style="color: #10b981;"></i> ✓ Seller Confirmed Delivery
+                <?php else: ?>
+                    <i class="fas fa-clock" style="color: #f59e0b;"></i> ⏳ Waiting for Seller to Confirm Delivery
+                <?php endif; ?>
+            </h4>
+            <?php if ($seller_confirmed): ?>
+                <p style="color: #065f46; font-size: 13px;">The seller has marked this item as delivered.</p>
+            <?php else: ?>
+                <p style="color: #92400e; font-size: 13px;">The seller will confirm when the item has been delivered.</p>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Buyer Confirmation Status (only visible to buyer) -->
+        <?php if ($is_buyer): ?>
+        <div class="delivery-card <?php echo $buyer_confirmed ? 'confirmed' : ''; ?>">
+            <h4>
+                <?php if ($buyer_confirmed): ?>
+                    <i class="fas fa-check-circle" style="color: #10b981;"></i> ✓ You Confirmed Receipt
+                <?php else: ?>
+                    <i class="fas fa-clock" style="color: #f59e0b;"></i> ⏳ Your Confirmation Needed
+                <?php endif; ?>
+            </h4>
+            <?php if (!$buyer_confirmed && $seller_confirmed): ?>
+                <p style="color: #1e40af; margin-bottom: 16px;">The seller has confirmed delivery. Please confirm that you have received the item.</p>
+                <button onclick="openConfirmModal()" class="btn btn-success">
+                    <i class="fas fa-check-circle"></i> Confirm Receipt
+                </button>
+            <?php elseif ($buyer_confirmed): ?>
+                <p style="color: #065f46;">You have confirmed receipt of this item.</p>
+            <?php elseif (!$seller_confirmed): ?>
+                <p style="color: #64748b;">Waiting for seller to confirm delivery before you can confirm.</p>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        
+        <!-- Seller Actions -->
+        <?php if ($is_seller && !$seller_confirmed && $buyerDepositPaid > 0): ?>
+        <div style="margin-top: 16px;">
+            <button onclick="openDeliveryModal()" class="btn btn-primary">
                 <i class="fas fa-truck"></i> Mark as Delivered
             </button>
         </div>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
     
-    <!-- PAYMENT CONFIRMED CARD - FOR BUYER -->
-    <?php if ($is_buyer && $payment_received && !$is_completed): ?>
-    <div class="card" style="background: #dbeafe; border: 2px solid #3b82f6;">
-        <div class="card-header">
-            <h3><i class="fas fa-check-circle" style="color: #2563eb;"></i> Payment Confirmed!</h3>
-        </div>
-        <div style="text-align: center; padding: 10px;">
-            <i class="fas fa-check-circle" style="font-size: 48px; color: #2563eb;"></i>
-            <p style="margin-top: 12px;">Your payment has been confirmed and is held securely in escrow.</p>
-            <p>The seller has been notified and will prepare your item.</p>
-        </div>
+    <!-- Remaining Payment Section -->
+    <?php if ($can_pay_remaining): ?>
+    <div class="remaining-payment-box">
+        <h4><i class="fas fa-wallet"></i> Complete Your Purchase</h4>
+        <div class="remaining-amount"><?php echo formatMoney($remainingBalance); ?></div>
+        <p>Both you and the seller have confirmed delivery.</p>
+        <p style="font-size: 13px; margin: 10px 0;">Pay the remaining balance to complete your purchase.</p>
+        <button onclick="initiateRemainingPayment()" id="payRemainingBtn" class="btn btn-success" style="margin-top: 10px;">
+            <i class="fas fa-credit-card"></i> Pay Remaining Balance
+        </button>
+        <div id="paymentError" style="color: #dc2626; font-size: 13px; margin-top: 12px; display: none;"></div>
     </div>
-    <?php endif; ?>
-    
-    <!-- ESCROW ACTION BUTTONS -->
-    <?php if ($escrow_active && !$is_completed && !$is_disputed && !$is_frozen): ?>
-        <?php if ($can_mark_delivery): ?>
-            <!-- SELLER: Mark Delivery Button -->
-            <div class="delivery-section">
-                <div class="delivery-title">
-                    <i class="fas fa-truck"></i> Mark as Delivered
-                </div>
-                <p style="margin-bottom: 16px; color: #1e3a8a;">Confirm that you have delivered the item/service to the buyer.</p>
-                <button onclick="openDeliveryModal()" class="btn btn-primary" style="background: #1e40af;">
-                    <i class="fas fa-check-circle"></i> I Have Delivered
-                </button>
-            </div>
-        <?php endif; ?>
-        
-        <?php if ($can_confirm_receipt): ?>
-            <!-- BUYER: Confirm Receipt Button -->
-            <div class="delivery-section" style="background: #d1fae5; border-color: #10b981;">
-                <div class="delivery-title" style="color: #065f46;">
-                    <i class="fas fa-check-circle"></i> Confirm Receipt
-                </div>
-                <p style="margin-bottom: 16px; color: #065f46;">Confirm that you have received the item/service. This will release payment to the seller.</p>
-                <button onclick="openConfirmModal()" class="btn btn-success">
-                    <i class="fas fa-money-bill-wave"></i> Confirm & Release Payment
-                </button>
-            </div>
-        <?php endif; ?>
-        
-        <?php if (!$can_mark_delivery && !$can_confirm_receipt && $escrow_active): ?>
-            <div class="card" style="text-align: center;">
-                <i class="fas fa-hourglass-half" style="font-size: 48px; color: #667eea; margin-bottom: 12px; display: block;"></i>
-                <p>Waiting for <?php echo $is_seller ? 'buyer confirmation' : 'seller to mark delivery'; ?>.</p>
-                <?php if ($transaction['delivery_status'] == 'delivered'): ?>
-                    <p class="info-text">The seller has marked this as delivered. Please confirm receipt to release payment.</p>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
-    <?php endif; ?>
-    
-    <!-- Dispute Button -->
-    <?php if ($can_open_dispute): ?>
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-gavel"></i> Having an Issue?</h3>
-            </div>
-            <p style="margin-bottom: 16px;">If you're experiencing problems with this transaction, you can raise a dispute. An admin will review your case.</p>
-            <button onclick="openDisputeModal()" class="btn btn-danger">
-                <i class="fas fa-flag"></i> Raise a Dispute
-            </button>
-        </div>
+    <?php elseif ($both_confirmed && $is_buyer && $remainingBalance <= 0): ?>
+    <div class="alert alert-success">
+        <i class="fas fa-check-circle"></i>
+        <div>Transaction Complete! The full amount has been paid.</div>
+    </div>
+    <?php elseif ($both_confirmed && $is_buyer && $remainingBalance > 0 && $remainingPaid == 0): ?>
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <div>Both parties have confirmed delivery. Click the "Pay Remaining Balance" button above to complete your purchase.</div>
+    </div>
     <?php endif; ?>
     
     <!-- Party Information -->
@@ -587,8 +495,8 @@ $can_pay_remaining = $is_buyer
     <!-- Payment History -->
     <div class="card">
         <div class="card-header"><h3><i class="fas fa-history"></i> Payment History</h3></div>
-        <?php if (!empty($payments_list)): ?>
-            <table>
+        <?php if ($payments_list && $payments_list->num_rows > 0): ?>
+            <table class="payment-history-table">
                 <thead>
                     <tr>
                         <th>Date</th>
@@ -598,14 +506,14 @@ $can_pay_remaining = $is_buyer
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($payments_list as $p): ?>
+                    <?php while ($p = $payments_list->fetch_assoc()): ?>
                         <tr>
                             <td><?php echo date('M d, H:i', strtotime($p['created_at'])); ?></td>
                             <td><?php echo formatMoney($p['amount']); ?></td>
-                            <td><?php echo ucfirst(str_replace('_', ' ', $p['type'] ?? 'payment')); ?></td>
-                            <td><span class="status-badge status-completed" style="background: #d1fae5;">Confirmed</span></td>
+                            <td><?php echo ucfirst(str_replace('_', ' ', $p['type'])); ?></td>
+                            <td><span class="status-badge" style="background: #d1fae5; color: #059669;">Confirmed</span></td>
                         </tr>
-                    <?php endforeach; ?>
+                    <?php endwhile; ?>
                 </tbody>
             </table>
         <?php else: ?>
@@ -635,9 +543,9 @@ $can_pay_remaining = $is_buyer
 <!-- Confirm Receipt Modal -->
 <div id="confirmModal" class="modal">
     <div class="modal-content">
-        <h3 style="margin-bottom: 16px;"><i class="fas fa-check-circle"></i> Confirm Receipt & Release Payment</h3>
+        <h3 style="margin-bottom: 16px;"><i class="fas fa-check-circle"></i> Confirm Receipt</h3>
         <div style="background: #fef3c7; padding: 16px; border-radius: 12px; margin-bottom: 16px;">
-            <p><strong>⚠️ Important:</strong> Confirming receipt will release the payment to the seller. This action cannot be undone.</p>
+            <p><strong>⚠️ Important:</strong> Confirm that you have received the item in good condition.</p>
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="confirm_receipt">
@@ -646,7 +554,7 @@ $can_pay_remaining = $is_buyer
                 <textarea name="confirm_notes" rows="3" placeholder="Add any notes about the delivery..."></textarea>
             </div>
             <div class="btn-group">
-                <button type="submit" class="btn btn-success">Confirm & Release Payment</button>
+                <button type="submit" class="btn btn-success">Confirm Receipt</button>
                 <button type="button" onclick="closeConfirmModal()" class="btn btn-outline">Cancel</button>
             </div>
         </form>
@@ -679,34 +587,10 @@ function closeConfirmModal() { document.getElementById('confirmModal').style.dis
 function openDisputeModal() { document.getElementById('disputeModal').style.display = 'flex'; }
 function closeDisputeModal() { document.getElementById('disputeModal').style.display = 'none'; }
 
-document.querySelectorAll('.pay-remaining-txn-btn').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const tid = this.dataset.transactionId;
-        if (!confirm('Pay the remaining balance now?')) return;
-        const errEl = document.getElementById('payRemainingTxnError');
-        this.disabled = true;
-        try {
-            const res = await fetch('/broker_system/user/api/transaction_workflow.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ action: 'pay_remaining', transaction_id: parseInt(tid, 10) })
-            });
-            const data = await res.json();
-            if (data.success && data.pay_url) {
-                window.location.href = data.pay_url;
-            } else {
-                errEl.textContent = data.error || 'Could not start payment';
-                errEl.style.display = 'block';
-                this.disabled = false;
-            }
-        } catch (e) {
-            errEl.textContent = 'Network error';
-            errEl.style.display = 'block';
-            this.disabled = false;
-        }
-    });
-});
+function initiateRemainingPayment() {
+    // Simple redirect - no API call needed
+    window.location.href = 'pay_rent.php?transaction_id=<?php echo $transaction_id; ?>&pay=remaining';
+}
 
 window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
@@ -716,7 +600,6 @@ window.onclick = function(event) {
 </script>
 
 <?php
-$conn->close();
 $content = ob_get_clean();
 include '../includes/layout.php';
 ?>
