@@ -4,6 +4,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/validation.php';
 
 requireLogin();
 
@@ -25,9 +26,7 @@ $max_withdrawal = getSetting('max_withdrawal', 100000);
 // Handle withdrawal request
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $amount = floatval($_POST['amount'] ?? 0);
-    $bank_name = $_POST['bank_name'] ?? '';
-    $account_number = $_POST['account_number'] ?? '';
-    $account_name = $_POST['account_name'] ?? '';
+    $telebirr_phone = sanitizePhone($_POST['telebirr_phone'] ?? '');
     
     $errors = [];
     
@@ -40,42 +39,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($amount > $balance) {
         $errors[] = "Insufficient balance. Your balance is " . formatMoney($balance);
     }
-    
-    if (empty($bank_name)) $errors[] = "Bank name is required";
-    if (empty($account_number)) $errors[] = "Account number is required";
-    if (empty($account_name)) $errors[] = "Account holder name is required";
+
+    if (empty($telebirr_phone) || !validatePhone($telebirr_phone)) {
+        $errors[] = "Please enter a valid Telebirr phone number";
+    }
     
     if (empty($errors)) {
         $conn->begin_transaction();
         
         try {
-            // Deduct from balance
-            $conn->query("UPDATE users SET balance = balance - $amount WHERE id = $user_id AND balance >= $amount");
-            
+            $updateBalance = $conn->prepare("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?");
+            $updateBalance->bind_param('dii', $amount, $user_id, $amount);
+            $updateBalance->execute();
+
             if ($conn->affected_rows > 0) {
-                // Create withdrawal request
-                $stmt = $conn->prepare("
-                    INSERT INTO withdrawal_requests (user_id, amount, bank_name, account_number, account_name, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, 'pending', NOW())
-                ");
-                $stmt->bind_param("idsss", $user_id, $amount, $bank_name, $account_number, $account_name);
+                $stmt = $conn->prepare("INSERT INTO withdrawal_requests (user_id, amount, telebirr_phone, bank_name, account_number, account_name, status, created_at) VALUES (?, ?, ?, '', '', '', 'pending', NOW())");
+                $stmt->bind_param('ids', $user_id, $amount, $telebirr_phone);
                 $stmt->execute();
                 
-                // Record wallet transaction
-                $conn->query("
-                    INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) 
-                    VALUES ($user_id, $amount, 'withdrawal_pending', 'Withdrawal request pending approval', NOW())
-                ");
-                
-                // Notify admin
-                $admin = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetch_assoc();
-                $notif_stmt = $conn->prepare("
-                    INSERT INTO notifications (user_id, title, message, created_at) 
-                    VALUES (?, '💰 New Withdrawal Request', 'User has requested withdrawal of " . formatMoney($amount) . "', NOW())
-                ");
-                $notif_stmt->bind_param("i", $admin['id']);
-                $notif_stmt->execute();
-                
+                $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_pending', ?, NOW())");
+                $description = "Withdrawal request pending approval to Telebirr " . $telebirr_phone;
+                $walletTx->bind_param('ids', $user_id, $amount, $description);
+                $walletTx->execute();
+
+                $adminRow = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+                if ($adminRow && $adminRow->num_rows > 0) {
+                    $adminId = $adminRow->fetch_assoc()['id'];
+                    $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, created_at) VALUES (?, '💰 New Withdrawal Request', ?, NOW())");
+                    $adminMessage = "User #$user_id requested a Telebirr withdrawal of " . formatMoney($amount) . ".";
+                    $notif->bind_param('is', $adminId, $adminMessage);
+                    $notif->execute();
+                }
+
                 $conn->commit();
                 $success = "Withdrawal request submitted successfully! Admin will process within 24-48 hours.";
                 
@@ -191,28 +186,9 @@ $conn->close();
                 <input type="number" name="amount" step="100" min="<?php echo $min_withdrawal; ?>" max="<?php echo min($max_withdrawal, $balance); ?>" required placeholder="0.00">
             </div>
             <div class="form-group">
-                <label>Bank Name</label>
-                <select name="bank_name" required>
-                    <option value="">Select Bank</option>
-                    <option>Commercial Bank of Ethiopia</option>
-                    <option>Dashen Bank</option>
-                    <option>Awash Bank</option>
-                    <option>Bank of Abyssinia</option>
-                    <option>Hibret Bank</option>
-                    <option>Nib International Bank</option>
-                    <option>United Bank</option>
-                    <option>Oromia Bank</option>
-                    <option>Wegagen Bank</option>
-                    <option>Zemen Bank</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Account Number</label>
-                <input type="text" name="account_number" required placeholder="Your bank account number">
-            </div>
-            <div class="form-group">
-                <label>Account Holder Name</label>
-                <input type="text" name="account_name" required placeholder="Name as it appears on account">
+                <label>Telebirr Phone Number</label>
+                <input type="text" name="telebirr_phone" required placeholder="e.g. +251912345678">
+                <div class="info-text">Enter the Telebirr phone number where funds should be transferred.</div>
             </div>
             <button type="submit" class="btn-submit"><i class="fas fa-paper-plane"></i> Submit Request</button>
         </form>
@@ -223,14 +199,14 @@ $conn->close();
         <h3 style="margin-bottom: 16px;"><i class="fas fa-history"></i> Recent Withdrawal Requests</h3>
         <table>
             <thead>
-                <tr><th>Date</th><th>Amount</th><th>Bank</th><th>Status</th></tr>
+                <tr><th>Date</th><th>Amount</th><th>Telebirr Phone</th><th>Status</th></tr>
             </thead>
             <tbody>
                 <?php while($wd = $withdrawals->fetch_assoc()): ?>
                 <tr>
                     <td><?php echo date('M d, Y', strtotime($wd['created_at'])); ?></td>
                     <td class="amount-negative">-<?php echo formatMoney($wd['amount']); ?></td>
-                    <td><?php echo htmlspecialchars($wd['bank_name']); ?></td>
+                    <td><?php echo htmlspecialchars($wd['telebirr_phone'] ?: $wd['bank_name']); ?></td>
                     <td>
                         <span class="badge badge-<?php echo $wd['status']; ?>">
                             <?php echo ucfirst($wd['status']); ?>

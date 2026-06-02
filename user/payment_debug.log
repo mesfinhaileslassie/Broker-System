@@ -34,3 +34,51 @@
 2026-06-01 18:20:42 - Seller ID: 5
 2026-06-01 18:20:42 - Seller Name: Mesfin Haileslassie
 2026-06-01 18:20:42 - Payment amounts - Deposit: 1260000, Commission: 630000, Total: 1890000
+2026-06-02 18:55:08 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 18:55:08 - Transaction ID: 88
+2026-06-02 18:59:52 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 18:59:52 - Transaction ID: 89
+2026-06-02 19:05:51 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 19:05:51 - Transaction ID: 89
+2026-06-02 19:05:51 - Database connection established
+2026-06-02 19:05:51 - User ID: 21, Transaction ID: 89
+2026-06-02 19:05:51 - Transaction found: Nissan 2026
+2026-06-02 19:05:51 - Seller ID: 5
+2026-06-02 19:05:51 - Seller Name: Mesfin Haileslassie
+2026-06-02 19:05:51 - Payment amounts - Deposit: 180000, Commission: 180000, Total: 360000
+2026-06-02 19:05:51 - Payment state synced
+2026-06-02 19:05:51 - Generated new payment code: 31768 type: deposit_buyer
+2026-06-02 19:05:51 - Page rendering completed
+2026-06-02 19:14:04 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 19:14:04 - Transaction ID: 89
+2026-06-02 19:14:04 - Database connection established
+2026-06-02 19:14:04 - User ID: 21, Transaction ID: 89
+2026-06-02 19:14:04 - Transaction found: Nissan 2026
+2026-06-02 19:14:04 - Seller ID: 5
+2026-06-02 19:14:04 - Seller Name: Mesfin Haileslassie
+2026-06-02 19:14:04 - Payment amounts - Deposit: 180000, Commission: 180000, Total: 360000
+2026-06-02 19:14:04 - Payment state synced
+2026-06-02 19:14:04 - Generated new payment code: 90029 type: deposit_buyer
+2026-06-02 19:14:04 - Page rendering completed
+2026-06-02 19:18:16 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 19:18:16 - Transaction ID: 90
+2026-06-02 19:18:16 - Database connection established
+2026-06-02 19:18:16 - User ID: 21, Transaction ID: 90
+2026-06-02 19:18:16 - Transaction found: edpkoj'p4tr'f
+2026-06-02 19:18:16 - Seller ID: 17
+2026-06-02 19:18:16 - Seller Name: Abebe Alemu
+2026-06-02 19:18:16 - Payment amounts - Deposit: 360000, Commission: 48000, Total: 408000
+2026-06-02 19:18:16 - Payment state synced
+2026-06-02 19:18:16 - Generated new payment code: 27230 type: deposit_buyer
+2026-06-02 19:18:16 - Page rendering completed
+2026-06-02 19:43:05 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 19:43:05 - Transaction ID: 91
+2026-06-02 19:43:05 - Database connection established
+2026-06-02 19:43:05 - User ID: 21, Transaction ID: 91
+2026-06-02 19:43:05 - Transaction found: FNL car
+2026-06-02 19:43:05 - Seller ID: 5
+2026-06-02 19:43:05 - Seller Name: Mesfin Haileslassie
+2026-06-02 19:43:05 - Payment amounts - Deposit: 1260000, Commission: 630000, Total: 1890000
+2026-06-02 19:43:06 - Payment state synced
+2026-06-02 19:43:06 - Generated new payment code: 85302 type: deposit_buyer, expires: 2026-06-02 20:13:06
+2026-06-02 19:43:06 - Page rendering completed

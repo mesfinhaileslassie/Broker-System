@@ -1,0 +1,9 @@
+2026-06-02 20:06:15 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 20:06:15 - Payment code: 31768
+2026-06-02 20:06:15 - PIN provided: YES
+2026-06-02 20:06:15 - User ID from session: 21
+2026-06-02 20:06:15 - Payment confirmation FAILED: Payment code expired
+2026-06-02 20:06:17 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 20:06:17 - Payment code: 31768
+2026-06-02 20:06:17 - PIN provided: YES
+2026-06-02 20:06:17 - User ID from session: 21

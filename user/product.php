@@ -1,30 +1,99 @@
 <?php
-// user/product.php - Complete Product Page with Rental Booking
+// user/product.php - Complete Product Page with Availability Check
+// FIXED: Added column existence checks to prevent warnings
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/seller_listing_payment.php';
+require_once '../includes/AvailabilityManager.php';
 
 requireLogin();
 
 $conn = getDbConnection();
 $listing_id = intval($_GET['id'] ?? 0);
 $user_id = $_SESSION['user_id'];
+$availabilityManager = new AvailabilityManager($conn);
+
+// Check what columns exist in listings table
+$columns_result = $conn->query("SHOW COLUMNS FROM listings");
+$existing_listing_columns = [];
+while ($col = $columns_result->fetch_assoc()) {
+    $existing_listing_columns[] = $col['Field'];
+}
+
+// Build SELECT query with only existing columns
+$select_fields = [
+    'l.*', 
+    'u.full_name as seller_name', 
+    'u.id as seller_id', 
+    'u.email as seller_email', 
+    'u.is_verified as seller_verified',
+    'c.name as category_name'
+];
+
+// Add availability_status if it exists
+if (in_array('availability_status', $existing_listing_columns)) {
+    $select_fields[] = 'l.availability_status';
+} else {
+    // Fallback: treat as available if column doesn't exist
+    $select_fields[] = "'available' as availability_status";
+}
+
+// Add sold_to_user_id if it exists
+if (in_array('sold_to_user_id', $existing_listing_columns)) {
+    $select_fields[] = 'l.sold_to_user_id';
+} else {
+    $select_fields[] = 'NULL as sold_to_user_id';
+}
+
+// Add sold_at if it exists
+if (in_array('sold_at', $existing_listing_columns)) {
+    $select_fields[] = 'l.sold_at';
+} else {
+    $select_fields[] = 'NULL as sold_at';
+}
 
 // Get listing details
-$listing = $conn->query("
-    SELECT l.*, u.full_name as seller_name, u.id as seller_id, u.email as seller_email, u.is_verified as seller_verified,
-           c.name as category_name
-    FROM listings l
-    JOIN users u ON l.seller_id = u.id
-    LEFT JOIN categories c ON l.category_id = c.id
-    WHERE l.id = $listing_id AND l.status = 'active' AND l.approval_status = 'approved'
-")->fetch_assoc();
+$sql = "SELECT " . implode(", ", $select_fields) . " 
+        FROM listings l
+        JOIN users u ON l.seller_id = u.id
+        LEFT JOIN categories c ON l.category_id = c.id
+        WHERE l.id = $listing_id AND l.status = 'active' AND l.approval_status = 'approved'";
+
+$listing = $conn->query($sql)->fetch_assoc();
 
 if (!$listing) {
     header('Location: browse.php');
     exit;
+}
+
+// Determine availability using safe array access
+$availability_status = $listing['availability_status'] ?? 'available';
+$sold_to_user_id = isset($listing['sold_to_user_id']) ? intval($listing['sold_to_user_id']) : null;
+
+// Check if listing is available for booking/purchase
+$is_available_for_booking = ($availability_status === 'available');
+$is_reserved_by_me = ($sold_to_user_id == $user_id && $availability_status === 'reserved');
+$unavailable_reason = '';
+
+if (!$is_available_for_booking && !$is_reserved_by_me) {
+    switch ($availability_status) {
+        case 'reserved':
+            $unavailable_reason = 'This item is currently reserved. Please check back later.';
+            break;
+        case 'sold':
+            $unavailable_reason = 'This item has been sold.';
+            break;
+        case 'rented':
+            $unavailable_reason = 'This property is currently rented and unavailable.';
+            break;
+        case 'unavailable':
+            $unavailable_reason = 'This item is temporarily unavailable.';
+            break;
+        default:
+            $unavailable_reason = 'This item is not available.';
+    }
 }
 
 // Increment view count
@@ -43,29 +112,49 @@ $remainingAmount = $listing['price'] - $depositAmount;
 
 $error = '';
 
+/**
+ * Get existing transaction ID for a user and listing
+ */
+function getExistingTransactionId($conn, $listing_id, $user_id) {
+    $result = $conn->query("
+        SELECT id FROM transactions 
+        WHERE listing_id = $listing_id AND buyer_id = $user_id 
+        ORDER BY id DESC LIMIT 1
+    ");
+    if ($result && $result->num_rows > 0) {
+        return $result->fetch_assoc()['id'];
+    }
+    return null;
+}
+
 // Handle product purchase (for non-rental items)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['purchase']) && !$is_seller && $listing['type'] != 'rental') {
-    $buyer_id = $user_id;
-    
-    $existing = $conn->query("SELECT id FROM transactions WHERE listing_id = $listing_id AND buyer_id = $buyer_id");
-    if ($existing->num_rows > 0) {
-        $txn = $existing->fetch_assoc();
-        header("Location: transaction.php?id={$txn['id']}");
-        exit;
-    }
-    
-    $stmt = $conn->prepare("
-        INSERT INTO transactions (listing_id, buyer_id, seller_id, total_amount, deposit_amount, commission_amount, remaining_balance, status, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_buyer_deposit', NOW())
-    ");
-    $stmt->bind_param("iiiiddd", $listing_id, $buyer_id, $listing['seller_id'], $listing['price'], $depositAmount, $commissionAmount, $remainingAmount);
-    
-    if ($stmt->execute()) {
-        $transaction_id = $conn->insert_id;
-        header("Location: pay_rent.php?transaction_id=$transaction_id");
-        exit;
+    // Check if item is still available before processing purchase
+    if (!$is_available_for_booking && !$is_reserved_by_me) {
+        $error = "This item is no longer available for purchase.";
     } else {
-        $error = "Failed to create transaction. Please try again.";
+        $buyer_id = $user_id;
+        
+        $existing = $conn->query("SELECT id FROM transactions WHERE listing_id = $listing_id AND buyer_id = $buyer_id");
+        if ($existing->num_rows > 0) {
+            $txn = $existing->fetch_assoc();
+            header("Location: transaction.php?id={$txn['id']}");
+            exit;
+        }
+        
+        $stmt = $conn->prepare("
+            INSERT INTO transactions (listing_id, buyer_id, seller_id, total_amount, deposit_amount, commission_amount, remaining_balance, status, created_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_buyer_deposit', NOW())
+        ");
+        $stmt->bind_param("iiiiddd", $listing_id, $buyer_id, $listing['seller_id'], $listing['price'], $depositAmount, $commissionAmount, $remainingAmount);
+        
+        if ($stmt->execute()) {
+            $transaction_id = $conn->insert_id;
+            header("Location: pay_rent.php?transaction_id=$transaction_id");
+            exit;
+        } else {
+            $error = "Failed to create transaction. Please try again.";
+        }
     }
 }
 
@@ -225,6 +314,26 @@ $conn->close();
             font-weight: 500;
             z-index: 10;
         }
+        
+        .availability-status-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 30px;
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+            z-index: 10;
+        }
+        
+        .availability-status-badge.available { background: #10b981; }
+        .availability-status-badge.reserved { background: #f59e0b; }
+        .availability-status-badge.sold { background: #ef4444; }
+        .availability-status-badge.rented { background: #ef4444; }
+        .availability-status-badge.unavailable { background: #64748b; }
         
         .product-info {
             padding: 28px;
@@ -413,9 +522,14 @@ $conn->close();
             text-decoration: none;
         }
         
-        .btn-purchase:hover {
+        .btn-purchase:hover:not(:disabled) {
             transform: translateY(-3px);
             box-shadow: 0 8px 25px rgba(102,126,234,0.4);
+        }
+        
+        .btn-purchase:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         
         .security-badge {
@@ -443,6 +557,18 @@ $conn->close();
             background: #dbeafe;
             color: var(--primary);
             border-left: 4px solid var(--primary);
+        }
+        
+        .alert-warning {
+            background: #fed7aa;
+            color: #9a3412;
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #dc2626;
+            border-left: 4px solid #dc2626;
         }
         
         .loading {
@@ -517,6 +643,22 @@ $conn->close();
                     else echo '💼 Job Opportunity';
                     ?>
                 </span>
+                <span class="availability-status-badge <?php echo $availability_status; ?>">
+                    <?php 
+                    if ($availability_status == 'available') echo '✓ Available';
+                    elseif ($availability_status == 'reserved') {
+                        if ($is_reserved_by_me) {
+                            echo '⏳ Reserved by You - Complete Payment';
+                        } else {
+                            echo '⏳ Reserved';
+                        }
+                    }
+                    elseif ($availability_status == 'sold') echo '🔒 Sold';
+                    elseif ($availability_status == 'rented') echo '🔒 Rented';
+                    else echo '⚡ Unavailable';
+                    ?>
+                </span>
+                
                 <?php if ($cover_image): ?>
                     <img src="<?php echo $cover_image; ?>" class="main-image" id="mainImage">
                 <?php else: ?>
@@ -655,6 +797,13 @@ $conn->close();
                 <?php endif; ?>
             </div>
             
+            <?php if ($error): ?>
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div><?php echo $error; ?></div>
+                </div>
+            <?php endif; ?>
+            
             <?php if ($is_seller): ?>
                 <?php if ($seller_payment && $seller_payment['has_deposit_payment']): ?>
                 <div class="payment-breakdown" style="margin-bottom: 16px; border: 1px solid #bbf7d0; background: #f0fdf4;">
@@ -694,21 +843,52 @@ $conn->close();
                         <i class="fas fa-box"></i> Manage My Listings
                     </a>
                 <?php endif; ?>
-            <?php else: ?>
-                <?php if ($listing['type'] == 'rental'): ?>
+            <?php elseif ($listing['type'] == 'rental'): ?>
+                <?php if ($is_available_for_booking): ?>
                     <a href="rental_booking.php?id=<?php echo $listing['id']; ?>" class="btn-purchase">
-                        <i class="fas fa-calendar-check"></i> Book Now
+                        <i class="fas fa-calendar-check"></i> Check Availability & Book
                     </a>
                     <p style="font-size: 11px; color: var(--gray); text-align: center; margin-top: 12px;">
                         <i class="fas fa-shield-alt"></i> Pay deposit to secure your booking
                     </p>
+                <?php elseif ($is_reserved_by_me): ?>
+                    <?php $txn_id = getExistingTransactionId($conn, $listing_id, $user_id); ?>
+                    <a href="pay_rent.php?transaction_id=<?php echo $txn_id; ?>" class="btn-purchase">
+                        <i class="fas fa-credit-card"></i> Complete Your Payment
+                    </a>
                 <?php else: ?>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-ban"></i>
+                        <div><?php echo $unavailable_reason; ?></div>
+                    </div>
+                    <button class="btn-purchase" disabled style="opacity:0.5; cursor:not-allowed;">
+                        <i class="fas fa-calendar-check"></i> Not Available
+                    </button>
+                <?php endif; ?>
+            <?php else: ?>
+                <?php if ($is_available_for_booking): ?>
                     <form method="POST">
                         <input type="hidden" name="purchase" value="1">
                         <button type="submit" class="btn-purchase">
                             <i class="fas fa-shopping-cart"></i> Purchase Now
                         </button>
                     </form>
+                    <p style="font-size: 11px; color: var(--gray); text-align: center; margin-top: 12px;">
+                        <i class="fas fa-shield-alt"></i> Pay deposit to secure this item
+                    </p>
+                <?php elseif ($is_reserved_by_me): ?>
+                    <?php $txn_id = getExistingTransactionId($conn, $listing_id, $user_id); ?>
+                    <a href="pay_rent.php?transaction_id=<?php echo $txn_id; ?>" class="btn-purchase">
+                        <i class="fas fa-credit-card"></i> Complete Your Payment
+                    </a>
+                <?php else: ?>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-ban"></i>
+                        <div><?php echo $unavailable_reason; ?></div>
+                    </div>
+                    <button class="btn-purchase" disabled style="opacity:0.5; cursor:not-allowed;">
+                        <i class="fas fa-shopping-cart"></i> Not Available
+                    </button>
                 <?php endif; ?>
             <?php endif; ?>
             

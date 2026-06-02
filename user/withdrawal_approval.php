@@ -4,6 +4,8 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/validation.php';
+require_once '../includes/telebirr_simulation.php';
 
 if (!isLoggedIn() || $_SESSION['user_role'] != 'admin') {
     header('Location: /broker_system/auth/login.php');
@@ -21,74 +23,119 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $withdrawal_id = intval($_POST['withdrawal_id'] ?? 0);
     $action = $_POST['action'] ?? '';
-    $admin_notes = $_POST['admin_notes'] ?? '';
+    $admin_notes = sanitizeString($_POST['admin_notes'] ?? '');
     
     if ($action === 'approve') {
-        $wd = $conn->query("SELECT user_id, amount FROM withdrawal_requests WHERE id = $withdrawal_id")->fetch_assoc();
-        
-        $conn->begin_transaction();
-        try {
-            $conn->query("
-                UPDATE withdrawal_requests 
-                SET status = 'approved', admin_notes = '$admin_notes', processed_by = {$_SESSION['user_id']}, processed_at = NOW()
-                WHERE id = $withdrawal_id
-            ");
-            
-            // Update wallet transaction
-            $conn->query("
-                UPDATE wallet_transactions 
-                SET type = 'withdrawal_approved', description = 'Withdrawal approved by admin'
-                WHERE user_id = {$wd['user_id']} AND amount = {$wd['amount']} AND type = 'withdrawal_pending'
-                ORDER BY id DESC LIMIT 1
-            ");
-            
-            // Notify user
-            $conn->query("
-                INSERT INTO notifications (user_id, title, message, created_at) 
-                VALUES ({$wd['user_id']}, '✅ Withdrawal Approved', 'Your withdrawal of " . formatMoney($wd['amount']) . " has been approved and will be processed shortly.', NOW())
-            ");
-            
-            $conn->commit();
-            $message = "Withdrawal approved successfully";
-        } catch (Exception $e) {
-            $conn->rollback();
-            $error = "Failed to approve withdrawal";
+        $stmt = $conn->prepare("SELECT user_id, amount, telebirr_phone FROM withdrawal_requests WHERE id = ? AND status = 'pending'");
+        $stmt->bind_param('i', $withdrawal_id);
+        $stmt->execute();
+        $wd = $stmt->get_result()->fetch_assoc();
+
+        if (!$wd) {
+            $error = "Withdrawal request not found or already processed";
+        } elseif (empty($wd['telebirr_phone'])) {
+            $error = "Telebirr phone number is required to approve this withdrawal";
+        } else {
+            $transferError = null;
+            $transfer = performTelebirrTransfer(getPlatformTelebirrPhone(), $wd['telebirr_phone'], $wd['amount'], 'Withdrawal payout', null, $transferError);
+
+            if ($transfer === false) {
+                $conn->begin_transaction();
+                try {
+                    $reference = generateTelebirrTransferReference();
+                    $update = $conn->prepare("UPDATE withdrawal_requests SET status = 'failed', telebirr_transfer_reference = ?, telebirr_transfer_status = 'failed', telebirr_sender_phone = ?, telebirr_receiver_phone = ?, telebirr_transfer_amount = ?, telebirr_transfer_message = ?, admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                    $update->bind_param('sssdssii', $reference, getPlatformTelebirrPhone(), $wd['telebirr_phone'], $wd['amount'], $transferError, $admin_notes, $_SESSION['user_id'], $withdrawal_id);
+                    $update->execute();
+
+                    $refund = $conn->prepare("UPDATE users SET balance = balance + ? WHERE id = ?");
+                    $refund->bind_param('di', $wd['amount'], $wd['user_id']);
+                    $refund->execute();
+
+                    $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_refund', ?, NOW())");
+                    $walletDesc = "Refund after failed Telebirr transfer for withdrawal #" . $withdrawal_id;
+                    $walletTx->bind_param('ids', $wd['user_id'], $wd['amount'], $walletDesc);
+                    $walletTx->execute();
+
+                    $conn->commit();
+                    $error = "Telebirr transfer failed: " . $transferError . " — amount refunded.";
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $error = "Failed to mark withdrawal failed: " . $e->getMessage();
+                }
+            } else {
+                $conn->begin_transaction();
+                try {
+                    $update = $conn->prepare("UPDATE withdrawal_requests SET status = 'approved', telebirr_transfer_reference = ?, telebirr_transfer_status = 'success', telebirr_sender_phone = ?, telebirr_receiver_phone = ?, telebirr_transfer_amount = ?, telebirr_transfer_message = ?, admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                    $update->bind_param('sssdssii', $transfer['reference'], getPlatformTelebirrPhone(), $wd['telebirr_phone'], $transfer['amount'], $transfer['description'], $admin_notes, $_SESSION['user_id'], $withdrawal_id);
+                    $update->execute();
+
+                    $walletQuery = $conn->prepare("SELECT id FROM wallet_transactions WHERE user_id = ? AND amount = ? AND type = 'withdrawal_pending' ORDER BY created_at DESC LIMIT 1");
+                    $walletQuery->bind_param('id', $wd['user_id'], $wd['amount']);
+                    $walletQuery->execute();
+                    $walletRow = $walletQuery->get_result();
+
+                    $walletDescription = "Withdrawal approved and sent to Telebirr " . $wd['telebirr_phone'];
+                    if ($walletRow && $walletRow->num_rows > 0) {
+                        $tx = $walletRow->fetch_assoc();
+                        $walletUpdate = $conn->prepare("UPDATE wallet_transactions SET type = 'withdrawal_approved', description = ? WHERE id = ?");
+                        $walletUpdate->bind_param('si', $walletDescription, $tx['id']);
+                        $walletUpdate->execute();
+                    } else {
+                        $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_approved', ?, NOW())");
+                        $walletTx->bind_param('ids', $wd['user_id'], $wd['amount'], $walletDescription);
+                        $walletTx->execute();
+                    }
+
+                    $notify = $conn->prepare("INSERT INTO notifications (user_id, title, message, created_at) VALUES (?, '✅ Withdrawal Approved', ?, NOW())");
+                    $notifyMessage = 'Your withdrawal of ' . formatMoney($wd['amount']) . ' has been approved and will be transferred to Telebirr ' . $wd['telebirr_phone'] . '.';
+                    $notify->bind_param('is', $wd['user_id'], $notifyMessage);
+                    $notify->execute();
+
+                    $conn->commit();
+                    $message = "Withdrawal approved and Telebirr transfer completed successfully.";
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $error = "Failed to approve withdrawal: " . $e->getMessage();
+                }
+            }
         }
     }
     
     if ($action === 'reject') {
-        $wd = $conn->query("SELECT user_id, amount FROM withdrawal_requests WHERE id = $withdrawal_id")->fetch_assoc();
-        
-        $conn->begin_transaction();
-        try {
-            // Refund amount back to user
-            $conn->query("UPDATE users SET balance = balance + {$wd['amount']} WHERE id = {$wd['user_id']}");
-            
-            $conn->query("
-                UPDATE withdrawal_requests 
-                SET status = 'rejected', admin_notes = '$admin_notes', processed_by = {$_SESSION['user_id']}, processed_at = NOW()
-                WHERE id = $withdrawal_id
-            ");
-            
-            // Update wallet transaction
-            $conn->query("
-                UPDATE wallet_transactions 
-                SET type = 'withdrawal_rejected', description = 'Withdrawal rejected: $admin_notes'
-                WHERE user_id = {$wd['user_id']} AND amount = {$wd['amount']} AND type = 'withdrawal_pending'
-                ORDER BY id DESC LIMIT 1
-            ");
-            
-            // Notify user
-            $conn->query("
-                INSERT INTO notifications (user_id, title, message, created_at) 
-                VALUES ({$wd['user_id']}, '❌ Withdrawal Rejected', 'Your withdrawal request was rejected. Reason: $admin_notes', NOW())
-            ");
-            
-            $conn->commit();
-            $message = "Withdrawal rejected and amount refunded";
-        } catch (Exception $e) {
-            $conn->rollback();
-            $error = "Failed to reject withdrawal";
+        $stmt = $conn->prepare("SELECT user_id, amount FROM withdrawal_requests WHERE id = ? AND status = 'pending'");
+        $stmt->bind_param('i', $withdrawal_id);
+        $stmt->execute();
+        $wd = $stmt->get_result()->fetch_assoc();
+
+        if (!$wd) {
+            $error = "Withdrawal request not found or already processed";
+        } else {
+            $conn->begin_transaction();
+            try {
+                $refund = $conn->prepare("UPDATE users SET balance = balance + ? WHERE id = ?");
+                $refund->bind_param('di', $wd['amount'], $wd['user_id']);
+                $refund->execute();
+
+                $updateRequest = $conn->prepare("UPDATE withdrawal_requests SET status = 'rejected', admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                $updateRequest->bind_param('sii', $admin_notes, $_SESSION['user_id'], $withdrawal_id);
+                $updateRequest->execute();
+
+                $walletDescription = 'Withdrawal rejected: ' . $admin_notes;
+                $walletUpdate = $conn->prepare("UPDATE wallet_transactions SET type = 'withdrawal_rejected', description = ? WHERE user_id = ? AND amount = ? AND type = 'withdrawal_pending' ORDER BY id DESC LIMIT 1");
+                $walletUpdate->bind_param('sid', $walletDescription, $wd['user_id'], $wd['amount']);
+                $walletUpdate->execute();
+
+                $notify = $conn->prepare("INSERT INTO notifications (user_id, title, message, created_at) VALUES (?, '❌ Withdrawal Rejected', ?, NOW())");
+                $notifyMessage = 'Your withdrawal request was rejected. Reason: ' . $admin_notes;
+                $notify->bind_param('is', $wd['user_id'], $notifyMessage);
+                $notify->execute();
+
+                $conn->commit();
+                $message = "Withdrawal rejected and amount refunded";
+            } catch (Exception $e) {
+                $conn->rollback();
+                $error = "Failed to reject withdrawal: " . $e->getMessage();
+            }
         }
     }
 }
@@ -236,16 +283,8 @@ $conn->close();
                 </div>
                 <div class="card-body">
                     <div class="info-row">
-                        <span>Bank:</span>
-                        <strong><?php echo htmlspecialchars($wd['bank_name']); ?></strong>
-                    </div>
-                    <div class="info-row">
-                        <span>Account Number:</span>
-                        <strong><?php echo htmlspecialchars($wd['account_number']); ?></strong>
-                    </div>
-                    <div class="info-row">
-                        <span>Account Name:</span>
-                        <strong><?php echo htmlspecialchars($wd['account_name']); ?></strong>
+                        <span>Telebirr Phone:</span>
+                        <strong><?php echo htmlspecialchars($wd['telebirr_phone'] ?: $wd['bank_name']); ?></strong>
                     </div>
                     <div class="info-row">
                         <span>Requested:</span>

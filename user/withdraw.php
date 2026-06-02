@@ -27,17 +27,26 @@ $success = '';
 // Handle cancellation
 if (isset($_GET['cancel']) && is_numeric($_GET['cancel'])) {
     $wd_id = sanitizeInt($_GET['cancel']);
-    $check = $conn->query("SELECT id, amount FROM withdrawal_requests WHERE id = $wd_id AND user_id = $user_id AND status = 'pending'");
-    if ($check->num_rows > 0) {
-        $wd = $check->fetch_assoc();
+    $stmt = $conn->prepare("SELECT id, amount FROM withdrawal_requests WHERE id = ? AND user_id = ? AND status = 'pending'");
+    $stmt->bind_param('ii', $wd_id, $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result && $result->num_rows > 0) {
+        $wd = $result->fetch_assoc();
         $conn->begin_transaction();
         try {
-            $conn->query("DELETE FROM withdrawal_requests WHERE id = $wd_id");
-            $conn->query("UPDATE users SET balance = balance + {$wd['amount']} WHERE id = $user_id");
+            $delete = $conn->prepare("DELETE FROM withdrawal_requests WHERE id = ?");
+            $delete->bind_param('i', $wd_id);
+            $delete->execute();
+
+            $refund = $conn->prepare("UPDATE users SET balance = balance + ? WHERE id = ?");
+            $refund->bind_param('di', $wd['amount'], $user_id);
+            $refund->execute();
+
             $conn->commit();
             $success = "Withdrawal request cancelled. " . formatMoney($wd['amount']) . " returned to your balance.";
-            
-            // Refresh balance
+
             $user = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
             $balance = $user['balance'];
         } catch (Exception $e) {
@@ -50,13 +59,9 @@ if (isset($_GET['cancel']) && is_numeric($_GET['cancel'])) {
 // Handle withdrawal request
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $amount = sanitizeFloat($_POST['amount'] ?? 0);
-    $bank_name = sanitizeString($_POST['bank_name'] ?? '');
-    $account_number = sanitizeString($_POST['account_number'] ?? '');
-    $account_name = sanitizeString($_POST['account_name'] ?? '');
-    
+    $telebirr_phone = sanitizePhone($_POST['telebirr_phone'] ?? '');
     $errors = [];
-    
-    // Validate amount
+
     if ($amount <= 0) {
         $errors[] = "Please enter a valid amount";
     } elseif ($amount < $min_withdrawal) {
@@ -66,52 +71,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($amount > $balance) {
         $errors[] = "Insufficient balance. Your current balance is " . formatMoney($balance);
     }
-    
-    // Validate bank details
-    if (empty($bank_name)) {
-        $errors[] = "Bank name is required";
-    } elseif (strlen($bank_name) < 2) {
-        $errors[] = "Please enter a valid bank name";
+
+    if (empty($telebirr_phone) || !validatePhone($telebirr_phone)) {
+        $errors[] = "Please enter a valid Telebirr phone number";
     }
-    
-    if (empty($account_number)) {
-        $errors[] = "Account number is required";
-    } elseif (!validateBankAccount($account_number)) {
-        $errors[] = "Please enter a valid account number (8-20 digits)";
-    }
-    
-    if (empty($account_name)) {
-        $errors[] = "Account holder name is required";
-    } elseif (strlen($account_name) < 3) {
-        $errors[] = "Please enter the full account holder name";
-    }
-    
+
     if (empty($errors)) {
         $conn->begin_transaction();
-        
+
         try {
-            // Deduct from balance
-            $conn->query("UPDATE users SET balance = balance - $amount WHERE id = $user_id AND balance >= $amount");
-            
+            $updateBalance = $conn->prepare("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?");
+            $updateBalance->bind_param('dii', $amount, $user_id, $amount);
+            $updateBalance->execute();
+
             if ($conn->affected_rows > 0) {
-                // Create withdrawal request
-                $stmt = $conn->prepare("
-                    INSERT INTO withdrawal_requests (user_id, amount, bank_name, account_number, account_name, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, 'pending', NOW())
-                ");
-                $stmt->bind_param("idsss", $user_id, $amount, $bank_name, $account_number, $account_name);
+                $stmt = $conn->prepare("INSERT INTO withdrawal_requests (user_id, amount, telebirr_phone, bank_name, account_number, account_name, status, created_at) VALUES (?, ?, ?, '', '', '', 'pending', NOW())");
+                $stmt->bind_param('ids', $user_id, $amount, $telebirr_phone);
                 $stmt->execute();
-                
-                // Record wallet transaction
-                $conn->query("
-                    INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) 
-                    VALUES ($user_id, $amount, 'withdrawal', 'Withdrawal request to $bank_name', NOW())
-                ");
-                
+
+                $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_pending', ?, NOW())");
+                $description = "Withdrawal request pending approval to Telebirr " . $telebirr_phone;
+                $walletTx->bind_param('ids', $user_id, $amount, $description);
+                $walletTx->execute();
+
+                $adminRow = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+                if ($adminRow && $adminRow->num_rows > 0) {
+                    $adminId = $adminRow->fetch_assoc()['id'];
+                    $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, created_at) VALUES (?, '💰 New Withdrawal Request', ?, NOW())");
+                    $adminMessage = "User #$user_id requested a Telebirr withdrawal of " . formatMoney($amount) . ".";
+                    $notif->bind_param('is', $adminId, $adminMessage);
+                    $notif->execute();
+                }
+
                 $conn->commit();
                 $success = "Withdrawal request submitted successfully! It will be processed within 24-48 hours.";
-                
-                // Refresh balance
+
                 $user = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
                 $balance = $user['balance'];
             } else {
@@ -199,33 +193,9 @@ $conn->close();
             </div>
             
             <div class="form-group">
-                <label>Bank Name <span class="required">*</span></label>
-                <select name="bank_name" required>
-                    <option value="">Select your bank</option>
-                    <option value="Commercial Bank of Ethiopia">Commercial Bank of Ethiopia (CBE)</option>
-                    <option value="Dashen Bank">Dashen Bank</option>
-                    <option value="Awash Bank">Awash Bank</option>
-                    <option value="Bank of Abyssinia">Bank of Abyssinia</option>
-                    <option value="Hibret Bank">Hibret Bank</option>
-                    <option value="Nib International Bank">Nib International Bank</option>
-                    <option value="United Bank">United Bank</option>
-                    <option value="Oromia Bank">Oromia Bank</option>
-                    <option value="Wegagen Bank">Wegagen Bank</option>
-                    <option value="Zemen Bank">Zemen Bank</option>
-                    <option value="Other">Other</option>
-                </select>
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Account Number <span class="required">*</span></label>
-                    <input type="text" name="account_number" required placeholder="Your bank account number">
-                    <div class="info-text">8-20 digits, numbers only</div>
-                </div>
-                <div class="form-group">
-                    <label>Account Holder Name <span class="required">*</span></label>
-                    <input type="text" name="account_name" required placeholder="Name as it appears on account">
-                </div>
+                <label>Telebirr Phone Number <span class="required">*</span></label>
+                <input type="text" name="telebirr_phone" required placeholder="e.g. +251912345678">
+                <div class="info-text">Enter the Telebirr phone number where funds should be transferred.</div>
             </div>
             
             <div class="limits">
@@ -243,14 +213,14 @@ $conn->close();
         <div class="table-wrapper">
             <table>
                 <thead>
-                    <tr><th>Date</th><th>Amount</th><th>Bank</th><th>Status</th><th>Action</th></tr>
+                    <tr><th>Date</th><th>Amount</th><th>Telebirr Phone</th><th>Status</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                     <?php while($wd = $withdrawals->fetch_assoc()): ?>
                     <tr>
                         <td><?php echo date('M d, Y', strtotime($wd['created_at'])); ?></td>
                         <td class="amount-negative">-<?php echo formatMoney($wd['amount']); ?></td>
-                        <td><?php echo htmlspecialchars($wd['bank_name']); ?></td>
+                        <td><?php echo htmlspecialchars($wd['telebirr_phone'] ?: $wd['bank_name']); ?></td>
                         <td>
                             <?php
                             $badge_class = match($wd['status']) {

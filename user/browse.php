@@ -1,14 +1,16 @@
 <?php
-// user/browse.php - Only shows ACTIVE listings (paid listings)
+// user/browse.php - Only shows AVAILABLE listings (not reserved)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
+require_once '../includes/AvailabilityManager.php';
 
 $page_title = 'Browse Listings';
 ob_start();
 
 $conn = getDbConnection();
+$availabilityManager = new AvailabilityManager($conn);
 
 // Get and sanitize filter parameters
 $type = isset($_GET['type']) ? htmlspecialchars(trim($_GET['type']), ENT_QUOTES, 'UTF-8') : '';
@@ -38,11 +40,12 @@ if ($max_price < 0) $max_price = 0;
 $limit = 12;
 $offset = ($page - 1) * $limit;
 
-// IMPORTANT: Only show ACTIVE listings (status = 'active')
-// This means the seller has paid the deposit + commission
+// IMPORTANT: Only show AVAILABLE listings (not reserved, not rented)
+// availability_status must be 'available'
 $where = [
     "l.status = 'active'", 
-    "l.approval_status = 'approved'"
+    "l.approval_status = 'approved'",
+    "(l.availability_status = 'available' OR l.availability_status IS NULL)",  // ← FIX: Hide reserved/sold
 ];
 $params = [];
 $types_param = "";
@@ -97,31 +100,23 @@ switch ($sort) {
         $orderBy = "l.created_at DESC";
 }
 
-// Get total count
-$countSql = "SELECT COUNT(*) as total FROM listings l $whereClause";
-$stmt = $conn->prepare($countSql);
-if ($params) {
-    $stmt->bind_param($types_param, ...$params);
-}
-$stmt->execute();
-$total = $stmt->get_result()->fetch_assoc()['total'];
+// Get total count using the AvailabilityManager for accuracy
+$total = $availabilityManager->getAvailableListingsCount($type, [
+    'search' => $search,
+    'min_price' => $min_price,
+    'max_price' => $max_price,
+    'location' => $location
+]);
 $totalPages = ceil($total / $limit);
 
-// Get listings
-$sql = "SELECT l.*, u.full_name as seller_name 
-        FROM listings l
-        JOIN users u ON l.seller_id = u.id
-        $whereClause
-        ORDER BY $orderBy
-        LIMIT ? OFFSET ?";
-$params[] = $limit;
-$params[] = $offset;
-$types_param .= "ii";
-
-$stmt = $conn->prepare($sql);
-$stmt->bind_param($types_param, ...$params);
-$stmt->execute();
-$listings = $stmt->get_result();
+// Get listings using AvailabilityManager to ensure only available listings
+$listings = $availabilityManager->getAvailableListings($type, $limit, $offset, [
+    'search' => $search,
+    'min_price' => $min_price,
+    'max_price' => $max_price,
+    'location' => $location,
+    'sort' => $sort
+]);
 
 $conn->close();
 ?>
@@ -160,6 +155,8 @@ $conn->close();
     .card-location { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; margin-top: 8px; }
     .card-seller { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
     .stats { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: #94a3b8; }
+    .availability-badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; margin-left: 8px; }
+    .badge-available { background: #d1fae5; color: #059669; }
     
     .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
     .pagination a, .pagination span { padding: 8px 14px; background: white; border-radius: 10px; text-decoration: none; color: #334155; font-size: 14px; transition: all 0.3s; border: 1px solid #e2e8f0; }
@@ -239,7 +236,7 @@ $conn->close();
 
 <!-- Result Count -->
 <div class="result-count">
-    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> listing(s)
+    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> available listing(s)
 </div>
 
 <!-- Listings Grid -->
@@ -275,10 +272,11 @@ $conn->close();
                         <?php if ($item['type'] == 'rental'): ?>🏡 For Rent
                         <?php elseif ($item['type'] == 'product'): ?>🚗 For Sale
                         <?php else: ?>💼 Job<?php endif; ?>
+                        <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Available</span>
                     </span>
                     <div class="card-title"><?php echo htmlspecialchars(substr($item['title'], 0, 50)); ?></div>
                     <div class="card-price"><?php echo formatMoney($item['price']); ?>
-                        <?php if ($item['type'] == 'rental'): ?><small>/month</small><?php endif; ?>
+                        <?php if ($item['type'] == 'rental'): ?><small>/night</small><?php endif; ?>
                         <?php if ($item['type'] == 'job'): ?><small>/month</small><?php endif; ?>
                     </div>
                     
@@ -332,8 +330,8 @@ $conn->close();
 <?php else: ?>
     <div class="empty-state">
         <i class="fas fa-search"></i>
-        <h3>No listings found</h3>
-        <p>Try adjusting your search or filter criteria</p>
+        <h3>No available listings found</h3>
+        <p>Try adjusting your search or filter criteria, or check back later for new listings.</p>
         <a href="post_listing.php" class="btn" style="display: inline-block; margin-top: 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 12px 28px; border-radius: 40px; text-decoration: none;">
             <i class="fas fa-plus-circle"></i> Post a Listing
         </a>

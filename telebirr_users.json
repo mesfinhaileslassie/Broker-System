@@ -1,0 +1,25 @@
+{
+  "users": {},
+  "transactions": [
+    {
+      "user_phone": "+251992116527",
+      "type": "escrow_payment",
+      "amount": 1800000.0,
+      "fee": 0.0,
+      "description": "Payment to Brokerplace - Modern Electric Car",
+      "reference": "TXN669136523038",
+      "date": "02 Jun 2026 10:03",
+      "status": "completed"
+    },
+    {
+      "user_phone": "+251992116527",
+      "type": "escrow_payment",
+      "amount": 400000.0,
+      "fee": 0.0,
+      "description": "Payment to Brokerplace - Modern Electric Car",
+      "reference": "TXN600821660925",
+      "date": "02 Jun 2026 10:02",
+      "status": "completed"
+    }
+  ]
+}

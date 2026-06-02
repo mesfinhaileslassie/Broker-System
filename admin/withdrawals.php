@@ -5,6 +5,7 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/validation.php';
+require_once '../includes/telebirr_simulation.php';
 
 requireAdminLogin();
 
@@ -23,17 +24,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $admin_id = $_SESSION['user_id'];
     
     if ($action === 'approve') {
-        $stmt = $conn->prepare("
-            UPDATE withdrawal_requests 
-            SET status = 'approved', admin_notes = ?, processed_by = ?, processed_at = NOW() 
-            WHERE id = ?
-        ");
-        $stmt->bind_param("sii", $admin_notes, $admin_id, $withdrawal_id);
-        
-        if ($stmt->execute()) {
-            $message = "Withdrawal approved successfully";
+        $stmt = $conn->prepare("SELECT user_id, amount, telebirr_phone FROM withdrawal_requests WHERE id = ? AND status = 'pending'");
+        $stmt->bind_param('i', $withdrawal_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $wd = $result ? $result->fetch_assoc() : null;
+
+        if (!$wd) {
+            $error = "Withdrawal request not found or already processed";
+        } elseif (empty($wd['telebirr_phone'])) {
+            $error = "Telebirr phone is missing for this withdrawal";
         } else {
-            $error = "Failed to approve withdrawal";
+            $transferError = null;
+            $transfer = performTelebirrTransfer(getPlatformTelebirrPhone(), $wd['telebirr_phone'], $wd['amount'], 'Withdrawal payout', null, $transferError);
+
+            if ($transfer === false) {
+                $conn->begin_transaction();
+                try {
+                    $update = $conn->prepare("UPDATE withdrawal_requests SET status = 'failed', telebirr_transfer_reference = ?, telebirr_transfer_status = 'failed', telebirr_sender_phone = ?, telebirr_receiver_phone = ?, telebirr_transfer_amount = ?, telebirr_transfer_message = ?, admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                    $reference = generateTelebirrTransferReference();
+                    $update->bind_param('sssdssii', $reference, getPlatformTelebirrPhone(), $wd['telebirr_phone'], $wd['amount'], $transferError, $admin_notes, $admin_id, $withdrawal_id);
+                    $update->execute();
+
+                    $refund = $conn->prepare("UPDATE users SET balance = balance + ? WHERE id = ?");
+                    $refund->bind_param('di', $wd['amount'], $wd['user_id']);
+                    $refund->execute();
+
+                    $walletDesc = "Refund after failed Telebirr transfer for withdrawal request #" . $withdrawal_id;
+                    $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_refund', ?, NOW())");
+                    $walletTx->bind_param('ids', $wd['user_id'], $wd['amount'], $walletDesc);
+                    $walletTx->execute();
+
+                    $conn->commit();
+                    $error = "Telebirr transfer failed: " . $transferError . " — amount has been refunded.";
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $error = "Failed to process withdrawal approval: " . $e->getMessage();
+                }
+            } else {
+                $conn->begin_transaction();
+                try {
+                    $update = $conn->prepare("UPDATE withdrawal_requests SET status = 'approved', telebirr_transfer_reference = ?, telebirr_transfer_status = 'success', telebirr_sender_phone = ?, telebirr_receiver_phone = ?, telebirr_transfer_amount = ?, telebirr_transfer_message = ?, admin_notes = ?, processed_by = ?, processed_at = NOW() WHERE id = ?");
+                    $update->bind_param('sssdssii', $transfer['reference'], getPlatformTelebirrPhone(), $wd['telebirr_phone'], $transfer['amount'], $transfer['description'], $admin_notes, $admin_id, $withdrawal_id);
+                    $update->execute();
+
+                    $walletQuery = $conn->prepare("SELECT id FROM wallet_transactions WHERE user_id = ? AND amount = ? AND type = 'withdrawal_pending' ORDER BY created_at DESC LIMIT 1");
+                    $walletQuery->bind_param('id', $wd['user_id'], $wd['amount']);
+                    $walletQuery->execute();
+                    $walletRow = $walletQuery->get_result();
+
+                    $walletDescription = "Withdrawal approved and sent to Telebirr " . $wd['telebirr_phone'];
+                    if ($walletRow && $walletRow->num_rows > 0) {
+                        $tx = $walletRow->fetch_assoc();
+                        $walletUpdate = $conn->prepare("UPDATE wallet_transactions SET type = 'withdrawal_approved', description = ? WHERE id = ?");
+                        $walletUpdate->bind_param('si', $walletDescription, $tx['id']);
+                        $walletUpdate->execute();
+                    } else {
+                        $walletTx = $conn->prepare("INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) VALUES (?, ?, 'withdrawal_approved', ?, NOW())");
+                        $walletTx->bind_param('ids', $wd['user_id'], $wd['amount'], $walletDescription);
+                        $walletTx->execute();
+                    }
+
+                    $conn->commit();
+                    $message = "Withdrawal approved and Telebirr transfer completed successfully.";
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $error = "Failed to approve withdrawal: " . $e->getMessage();
+                }
+            }
         }
     } elseif ($action === 'complete') {
         $stmt = $conn->prepare("
@@ -197,7 +255,7 @@ $conn->close();
         <?php if ($withdrawals && $withdrawals->num_rows > 0): ?>
             <table>
                 <thead>
-                    <tr><th>ID</th><th>User</th><th>Amount</th><th>Bank Details</th><th>Status</th><th>Requested</th><th>Actions</th></tr>
+                    <tr><th>ID</th><th>User</th><th>Amount</th><th>Telebirr Phone</th><th>Status</th><th>Requested</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                     <?php while($row = $withdrawals->fetch_assoc()): ?>
@@ -205,7 +263,7 @@ $conn->close();
                         <td>#<?php echo $row['id']; ?></td>
                         <td><strong><?php echo htmlspecialchars($row['full_name']); ?></strong><br><small><?php echo htmlspecialchars($row['email']); ?></small></td>
                         <td><strong><?php echo formatMoney($row['amount']); ?></strong></td>
-                        <td><?php echo htmlspecialchars($row['bank_name']); ?><br><small><?php echo htmlspecialchars($row['account_number']); ?></small></td>
+                        <td><?php echo htmlspecialchars($row['telebirr_phone'] ?: $row['bank_name']); ?><br><small><?php echo htmlspecialchars($row['account_number']); ?></small></td>
                         <td>
                             <?php
                             $badgeClass = match($row['status']) {

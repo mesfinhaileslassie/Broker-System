@@ -73,6 +73,17 @@ if ($result->num_rows === 0) {
     exit;
 }
 
+// Add listing availability status to response
+$listing_status = $conn->query("
+    SELECT availability_status, sold_to_user_id 
+    FROM listings l
+    JOIN transactions t ON t.listing_id = l.id
+    WHERE t.id = {$data['transaction_id']}
+")->fetch_assoc();
+
+$response['listing_availability'] = $listing_status['availability_status'] ?? 'available';
+$response['is_reserved'] = ($listing_status['availability_status'] ?? '') === 'reserved';
+
 $data = $result->fetch_assoc();
 
 // Build response based on backend authority ONLY
