@@ -1,5 +1,7 @@
 <?php
 // includes/validation.php - Complete Validation & Sanitization System
+// UPDATED: Strict Ethiopian phone validation
+// REMOVED: TIN validation function
 
 /**
  * ============================================
@@ -7,56 +9,36 @@
  * ============================================
  */
 
-/**
- * Sanitize string input (HTML escape)
- */
 function sanitizeString($input) {
     if ($input === null) return '';
     return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
 }
 
-/**
- * Sanitize integer
- */
 function sanitizeInt($input, $default = 0) {
     $filtered = filter_var($input, FILTER_VALIDATE_INT);
     return $filtered !== false ? $filtered : $default;
 }
 
-/**
- * Sanitize float/decimal
- */
 function sanitizeFloat($input, $default = 0.00) {
     $filtered = filter_var($input, FILTER_VALIDATE_FLOAT);
     return $filtered !== false ? $filtered : $default;
 }
 
-/**
- * Sanitize email
- */
 function sanitizeEmail($email) {
     $email = trim($email);
     return filter_var($email, FILTER_SANITIZE_EMAIL);
 }
 
-/**
- * Sanitize URL
- */
 function sanitizeUrl($url) {
     $url = trim($url);
     return filter_var($url, FILTER_SANITIZE_URL);
 }
 
-/**
- * Sanitize phone number (keep only digits and +)
- */
 function sanitizePhone($phone) {
+    // Remove all non-digit characters except +
     return preg_replace('/[^0-9+]/', '', $phone);
 }
 
-/**
- * Sanitize array recursively
- */
 function sanitizeArray($array) {
     if (!is_array($array)) {
         return sanitizeString($array);
@@ -69,20 +51,12 @@ function sanitizeArray($array) {
     return $result;
 }
 
-/**
- * Sanitize for database input (SQL safe)
- */
 function sanitizeForDb($conn, $input) {
     return $conn->real_escape_string(trim($input));
 }
 
-/**
- * Sanitize filename (remove path traversal)
- */
 function sanitizeFilename($filename) {
-    // Remove any path information
     $filename = basename($filename);
-    // Remove special characters
     $filename = preg_replace('/[^a-zA-Z0-9._-]/', '', $filename);
     return $filename;
 }
@@ -93,36 +67,45 @@ function sanitizeFilename($filename) {
  * ============================================
  */
 
-/**
- * Validate email format
- */
 function validateEmail($email) {
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
 /**
- * Validate phone number (Ethiopian format)
+ * STRICT Ethiopian phone validation
+ * Must be exactly +251 followed by 9 digits
+ * Example: +251912345678
  */
 function validatePhone($phone) {
-    $phone = preg_replace('/[^0-9+]/', '', $phone);
-    
-    $patterns = [
-        '/^\+251[0-9]{9}$/',      // +251XXXXXXXXX
-        '/^0[0-9]{9}$/',           // 0XXXXXXXXX  
-        '/^[0-9]{10}$/'            // XXXXXXXXXX
-    ];
-    
-    foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $phone)) {
-            return true;
-        }
-    }
-    return false;
+    $clean = preg_replace('/[^0-9+]/', '', $phone);
+    // Must start with +251 and have exactly 13 characters total (+251 + 9 digits)
+    return preg_match('/^\+251[0-9]{9}$/', $clean) === 1;
 }
 
 /**
- * Validate password strength
+ * Convert any Ethiopian phone format to standard +251XXXXXXXXX
  */
+function normalizePhone($phone) {
+    $clean = preg_replace('/[^0-9]/', '', $phone);
+    
+    // If starts with 0 (e.g., 0912345678), convert to +251
+    if (strlen($clean) === 10 && $clean[0] === '0') {
+        return '+251' . substr($clean, 1);
+    }
+    
+    // If already has +251 and 9 digits
+    if (strlen($clean) === 12 && substr($clean, 0, 3) === '251') {
+        return '+' . $clean;
+    }
+    
+    // If already in correct format
+    if (preg_match('/^\+251[0-9]{9}$/', $clean)) {
+        return $clean;
+    }
+    
+    return $clean;
+}
+
 function validatePasswordStrength($password) {
     $errors = [];
     
@@ -142,23 +125,16 @@ function validatePasswordStrength($password) {
     return $errors;
 }
 
-/**
- * Validate amount (positive, max 2 decimals)
- */
 function validateAmount($amount) {
     if (!is_numeric($amount) || $amount <= 0) {
         return false;
     }
-    // Check for more than 2 decimal places
     if (preg_match('/\.[0-9]{3,}$/', (string)$amount)) {
         return false;
     }
     return true;
 }
 
-/**
- * Validate required fields
- */
 function validateRequired($data, $fields) {
     $errors = [];
     foreach ($fields as $field) {
@@ -169,64 +145,38 @@ function validateRequired($data, $fields) {
     return $errors;
 }
 
-/**
- * Validate string length
- */
 function validateLength($input, $min, $max) {
     $length = strlen(trim($input));
     return $length >= $min && $length <= $max;
 }
 
-/**
- * Validate date format
- */
 function validateDate($date, $format = 'Y-m-d') {
     $d = DateTime::createFromFormat($format, $date);
     return $d && $d->format($format) === $date;
 }
 
-/**
- * Validate URL
- */
 function validateUrl($url) {
     return filter_var($url, FILTER_VALIDATE_URL) !== false;
 }
 
-/**
- * Validate listing type
- */
 function validateListingType($type) {
     $valid = ['product', 'job', 'rental'];
     return in_array($type, $valid);
 }
 
-/**
- * Validate transaction status
- */
 function validateTransactionStatus($status) {
     $valid = ['pending_deposit', 'awaiting_buyer_deposit', 'awaiting_seller_deposit',
               'deposits_complete', 'in_progress', 'completed', 'disputed', 'cancelled'];
     return in_array($status, $valid);
 }
 
-/**
- * Validate Ethiopian TIN (Tax Identification Number)
- */
-function validateTIN($tin) {
-    return preg_match('/^[0-9]{10,15}$/', $tin);
-}
+// TIN VALIDATION FUNCTION REMOVED
 
-/**
- * Validate bank account number
- */
 function validateBankAccount($account) {
     $account = preg_replace('/[^0-9]/', '', $account);
     return strlen($account) >= 8 && strlen($account) <= 20;
 }
 
-/**
- * Validate file upload
- */
 function validateFileUpload($file, $maxSize = 5242880, $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']) {
     $errors = [];
     
@@ -250,9 +200,6 @@ function validateFileUpload($file, $maxSize = 5242880, $allowedTypes = ['image/j
     return $errors;
 }
 
-/**
- * Validate CSRF token
- */
 function validateCSRF($token) {
     if (!isset($_SESSION['csrf_token']) || empty($token)) {
         return false;
@@ -260,9 +207,6 @@ function validateCSRF($token) {
     return hash_equals($_SESSION['csrf_token'], $token);
 }
 
-/**
- * Generate CSRF token
- */
 function generateCSRFToken() {
     if (!isset($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -276,11 +220,8 @@ function generateCSRFToken() {
  * ============================================
  */
 
-/**
- * Check if email exists in database
- */
 function emailExists($conn, $email, $excludeId = null) {
-    $sql = "SELECT id FROM users WHERE email = ?";
+    $sql = "SELECT id FROM users WHERE LOWER(email) = LOWER(?)";
     $params = [$email];
     $types = "s";
     
@@ -299,8 +240,29 @@ function emailExists($conn, $email, $excludeId = null) {
 }
 
 /**
- * Check if listing belongs to user
+ * Check if phone exists (for strict Ethiopian format)
  */
+function phoneExists($conn, $phone, $excludeId = null) {
+    $normalized = normalizePhone($phone);
+    
+    $sql = "SELECT id FROM users WHERE phone = ?";
+    $params = [$normalized];
+    $types = "s";
+    
+    if ($excludeId) {
+        $sql .= " AND id != ?";
+        $params[] = $excludeId;
+        $types .= "i";
+    }
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    return $result->num_rows > 0;
+}
+
 function validateListingOwnership($conn, $listingId, $userId) {
     $stmt = $conn->prepare("SELECT id FROM listings WHERE id = ? AND seller_id = ?");
     $stmt->bind_param("ii", $listingId, $userId);
@@ -308,9 +270,6 @@ function validateListingOwnership($conn, $listingId, $userId) {
     return $stmt->get_result()->num_rows > 0;
 }
 
-/**
- * Check if transaction belongs to user
- */
 function validateTransactionAccess($conn, $transactionId, $userId) {
     $stmt = $conn->prepare("SELECT id FROM transactions WHERE id = ? AND (buyer_id = ? OR seller_id = ?)");
     $stmt->bind_param("iii", $transactionId, $userId, $userId);
@@ -324,9 +283,6 @@ function validateTransactionAccess($conn, $transactionId, $userId) {
  * ============================================
  */
 
-/**
- * Process and validate a complete form input
- */
 function processFormInput($data, $rules) {
     $errors = [];
     $sanitized = [];
@@ -334,7 +290,6 @@ function processFormInput($data, $rules) {
     foreach ($rules as $field => $rule) {
         $value = $data[$field] ?? '';
         
-        // Sanitize based on type
         switch ($rule['type'] ?? 'string') {
             case 'int':
                 $sanitized[$field] = sanitizeInt($value);
@@ -352,27 +307,26 @@ function processFormInput($data, $rules) {
                 $sanitized[$field] = sanitizeString($value);
         }
         
-        // Validate required
         if (($rule['required'] ?? false) && empty($sanitized[$field])) {
             $errors[] = $rule['label'] . " is required";
         }
         
-        // Validate email format
         if (($rule['type'] ?? '') == 'email' && !empty($sanitized[$field]) && !validateEmail($sanitized[$field])) {
             $errors[] = "Please enter a valid email address";
         }
         
-        // Validate min length
+        if (($rule['type'] ?? '') == 'phone' && !empty($sanitized[$field]) && !validatePhone($sanitized[$field])) {
+            $errors[] = "Please enter a valid Ethiopian phone number (+251XXXXXXXXX)";
+        }
+        
         if (isset($rule['min']) && strlen($sanitized[$field]) < $rule['min']) {
             $errors[] = $rule['label'] . " must be at least " . $rule['min'] . " characters";
         }
         
-        // Validate max length
         if (isset($rule['max']) && strlen($sanitized[$field]) > $rule['max']) {
             $errors[] = $rule['label'] . " must not exceed " . $rule['max'] . " characters";
         }
         
-        // Validate in array
         if (isset($rule['in']) && !in_array($sanitized[$field], $rule['in'])) {
             $errors[] = "Please select a valid option for " . $rule['label'];
         }
@@ -385,15 +339,6 @@ function processFormInput($data, $rules) {
     ];
 }
 
-/**
- * ============================================
- * HELPER FUNCTIONS
- * ============================================
- */
-
-/**
- * Get validation error summary as HTML
- */
 function getValidationErrorsHTML($errors) {
     if (empty($errors)) return '';
     
@@ -407,36 +352,28 @@ function getValidationErrorsHTML($errors) {
     return $html;
 }
 
-/**
- * Log validation error (for debugging)
- */
 function logValidationError($message, $data = []) {
     $log = date('Y-m-d H:i:s') . " - " . $message;
     if (!empty($data)) {
         $log .= " - Data: " . json_encode($data);
     }
-    error_log($log . PHP_EOL, 3, __DIR__ . '/../logs/validation.log');
+    $logDir = __DIR__ . '/../logs';
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0777, true);
+    }
+    error_log($log . PHP_EOL, 3, $logDir . '/validation.log');
 }
 
-/**
- * Quick validate integer range
- */
 function validateIntRange($value, $min, $max) {
     $value = sanitizeInt($value);
     return $value >= $min && $value <= $max;
 }
 
-/**
- * Quick validate string (no special chars)
- */
 function validateAlphaNumeric($string, $allowSpaces = true) {
     $pattern = $allowSpaces ? '/^[a-zA-Z0-9\s]+$/' : '/^[a-zA-Z0-9]+$/';
     return preg_match($pattern, $string);
 }
 
-/**
- * Validate JSON string
- */
 function validateJSON($string) {
     if (empty($string)) return true;
     json_decode($string);

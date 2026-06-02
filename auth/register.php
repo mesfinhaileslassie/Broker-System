@@ -1,5 +1,6 @@
 <?php
-// auth/register.php - Complete Registration with Ethiopian Validation
+// auth/register.php - Complete Registration with STRICT Ethiopian Validation
+// UPDATED: Phone field with pre-filled +251, user enters only 9 digits
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -10,18 +11,28 @@ $error = '';
 $success = '';
 $form_data = [];
 
+// List of disposable email domains to block
+$disposable_domains = [
+    'tempmail.com', '10minutemail.com', 'guerrillamail.com', 'mailinator.com',
+    'yopmail.com', 'throwawaymail.com', 'sharklasers.com', 'guerrillamail.net',
+    'guerrillamail.org', 'guerrillamail.biz', 'mailnator.com', 'temp-mail.org',
+    'tempemail.net', 'tempinbox.com', 'trashmail.com', 'spamgourmet.com',
+    'mailcatch.com', 'fakeinbox.com', 'getairmail.com', 'mailmetrash.com',
+    'wegwerfmail.de', 'wegwerfmail.net', 'wegwerfmail.org', 'cool.fr.nf',
+    'jetable.fr.nf', 'courriel.fr.nf', 'moncourrier.fr.nf', 'monemail.fr.nf'
+];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Sanitize all inputs first
     $form_data = [
         'full_name' => sanitizeString($_POST['full_name'] ?? ''),
         'email' => sanitizeEmail($_POST['email'] ?? ''),
-        'phone' => sanitizePhone($_POST['phone'] ?? ''),
-        'password' => $_POST['password'] ?? '', // Don't sanitize password
+        'phone' => sanitizeString($_POST['phone'] ?? ''), // Will be digits only
+        'password' => $_POST['password'] ?? '',
         'confirm_password' => $_POST['confirm_password'] ?? '',
         'account_type' => sanitizeString($_POST['account_type'] ?? 'user'),
         'business_name' => sanitizeString($_POST['business_name'] ?? ''),
         'business_type' => sanitizeString($_POST['business_type'] ?? ''),
-        'tin_number' => sanitizeString($_POST['tin_number'] ?? ''),
         'business_address' => sanitizeString($_POST['business_address'] ?? '')
     ];
     
@@ -41,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // ============================================
-    // EMAIL VALIDATION (Real email format)
+    // EMAIL VALIDATION (Strict)
     // ============================================
     if (empty($form_data['email'])) {
         $errors[] = "Email address is required";
@@ -49,15 +60,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Please enter a valid email address (e.g., name@example.com)";
     } elseif (strlen($form_data['email']) > 255) {
         $errors[] = "Email address is too long";
+    } else {
+        // Check for disposable email domains
+        $email_domain = substr(strrchr($form_data['email'], "@"), 1);
+        if (in_array(strtolower($email_domain), $disposable_domains)) {
+            $errors[] = "Please use a permanent email address. Temporary/disposable emails are not allowed.";
+        }
+        
+        // Block common fake email patterns
+        $fake_patterns = ['test', 'example', 'fake', 'dummy', 'temp', 'throwaway'];
+        foreach ($fake_patterns as $pattern) {
+            if (stripos($form_data['email'], $pattern) !== false) {
+                $errors[] = "Please use a real email address. Fake/test emails are not allowed.";
+                break;
+            }
+        }
     }
     
     // ============================================
-    // PHONE VALIDATION (Ethiopian format)
+    // PHONE VALIDATION (User enters only 9 digits)
     // ============================================
-    if (!empty($form_data['phone'])) {
-        if (!validatePhone($form_data['phone'])) {
-            $errors[] = "Please enter a valid Ethiopian phone number (e.g., +251911234567 or 0911234567)";
+    if (empty($form_data['phone'])) {
+        $errors[] = "Phone number is required";
+    } else {
+        // Remove any non-digit characters
+        $clean_phone = preg_replace('/[^0-9]/', '', $form_data['phone']);
+        
+        // Must be exactly 9 digits
+        if (strlen($clean_phone) !== 9) {
+            $errors[] = "Please enter exactly 9 digits (e.g., 912345678)";
+        } elseif (!preg_match('/^[0-9]{9}$/', $clean_phone)) {
+            $errors[] = "Phone number must contain only digits";
         }
+        
+        // Store the full number with +251 prefix
+        $form_data['phone'] = '+251' . $clean_phone;
     }
     
     // ============================================
@@ -86,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // ============================================
-    // COMPANY SPECIFIC VALIDATION
+    // COMPANY SPECIFIC VALIDATION (NO TIN)
     // ============================================
     if ($form_data['account_type'] == 'company') {
         if (empty($form_data['business_name'])) {
@@ -95,12 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = "Business name must be at least 2 characters";
         } elseif (strlen($form_data['business_name']) > 150) {
             $errors[] = "Business name must not exceed 150 characters";
-        }
-        
-        if (empty($form_data['tin_number'])) {
-            $errors[] = "TIN (Tax Identification Number) is required for company accounts";
-        } elseif (!validateTIN($form_data['tin_number'])) {
-            $errors[] = "Please enter a valid TIN number (10-15 digits)";
         }
         
         if (!empty($form_data['business_type'])) {
@@ -112,20 +143,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // ============================================
-    // DATABASE VALIDATION (Email exists?)
+    // DATABASE VALIDATION (Email & Phone uniqueness)
     // ============================================
     if (empty($errors)) {
         $conn = getDbConnection();
         
-        if (emailExists($conn, $form_data['email'])) {
+        // Check if email already exists (case-insensitive)
+        $email_check = $conn->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?)");
+        $email_check->bind_param("s", $form_data['email']);
+        $email_check->execute();
+        $email_result = $email_check->get_result();
+        
+        if ($email_result->num_rows > 0) {
             $errors[] = "This email is already registered. Please login or use a different email.";
+        }
+        
+        // Check if phone already exists
+        $phone_check = $conn->prepare("SELECT id FROM users WHERE phone = ?");
+        $phone_check->bind_param("s", $form_data['phone']);
+        $phone_check->execute();
+        $phone_result = $phone_check->get_result();
+        
+        if ($phone_result->num_rows > 0) {
+            $errors[] = "This phone number is already registered. Please use a different number.";
         }
         
         $conn->close();
     }
     
     // ============================================
-    // PROCESS REGISTRATION
+    // PROCESS REGISTRATION (NO BONUS)
     // ============================================
     if (empty($errors)) {
         $conn = getDbConnection();
@@ -134,10 +181,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->begin_transaction();
         
         try {
-            // Insert user
+            // Insert user - NO balance addition, NO bonus
             $stmt = $conn->prepare("
-                INSERT INTO users (full_name, email, phone, password_hash, role, is_verified, created_at) 
-                VALUES (?, ?, ?, ?, ?, 0, NOW())
+                INSERT INTO users (full_name, email, phone, password_hash, role, is_verified, balance, created_at) 
+                VALUES (?, ?, ?, ?, ?, 0, 0, NOW())
             ");
             $stmt->bind_param("sssss", 
                 $form_data['full_name'], 
@@ -149,34 +196,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $user_id = $conn->insert_id;
             
-            // If company, create company profile
+            // If company, create company profile (WITHOUT TIN)
             if ($form_data['account_type'] == 'company') {
                 $stmt2 = $conn->prepare("
-                    INSERT INTO companies (user_id, business_name, business_type, tin_number, address, is_approved, created_at) 
-                    VALUES (?, ?, ?, ?, ?, 0, NOW())
+                    INSERT INTO companies (user_id, business_name, business_type, address, is_approved, created_at) 
+                    VALUES (?, ?, ?, ?, 0, NOW())
                 ");
-                $stmt2->bind_param("issss", 
+                $stmt2->bind_param("isss", 
                     $user_id, 
                     $form_data['business_name'], 
                     $form_data['business_type'], 
-                    $form_data['tin_number'], 
                     $form_data['business_address']
                 );
                 $stmt2->execute();
             }
             
-            // Add welcome bonus (100 ETB for new users)
-            $conn->query("UPDATE users SET balance = balance + 100 WHERE id = $user_id");
-            $conn->query("
-                INSERT INTO wallet_transactions (user_id, amount, type, description, created_at) 
-                VALUES ($user_id, 100, 'deposit', 'Welcome bonus', NOW())
-            ");
+            // NO WELCOME BONUS - REMOVED COMPLETELY
             
             $conn->commit();
             
+            // Get user balance (should be 0)
+            $userBalance = 0;
+            
             // Auto-login
-            $userBalance = $conn->query("SELECT balance FROM users WHERE id = $user_id")->fetch_assoc();
-            userLogin($user_id, $form_data['full_name'], $form_data['email'], $form_data['account_type'], $userBalance['balance']);
+            userLogin($user_id, $form_data['full_name'], $form_data['email'], $form_data['account_type'], $userBalance);
             
             // Redirect based on account type
             if ($form_data['account_type'] == 'company') {
@@ -290,22 +333,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 2px;
         }
 
-        .bonus-pill {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-            padding: 4px 10px;
-            border-radius: 20px;
-            white-space: nowrap;
-            flex-shrink: 0;
-        }
-
-        .bonus-pill i  { color: #f59e0b; font-size: 11px; }
-        .bonus-pill span { font-size: 11px; font-weight: 600; color: #92400e; }
-
         .card-body { padding: 22px 28px 26px; }
 
         .alert {
@@ -416,12 +443,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 13px;
             pointer-events: none;
             transition: color var(--transition);
+            z-index: 2;
         }
 
         .input-wrap input, .input-wrap select {
             width: 100%;
             height: 42px;
-            padding: 0 36px 0 34px;
             border: 1.5px solid var(--border);
             border-radius: var(--radius-sm);
             font-family: var(--font);
@@ -429,6 +456,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--text);
             background: #fafbff;
             transition: border-color var(--transition), box-shadow var(--transition);
+        }
+
+        .input-wrap input {
+            padding: 0 36px 0 70px;
         }
 
         .input-wrap select {
@@ -450,6 +481,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-color: #ef4444;
         }
 
+        .country-code-prefix {
+            position: absolute;
+            left: 34px;
+            color: #6b7296;
+            font-size: 13.5px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
         .toggle-pw {
             position: absolute;
             right: 11px;
@@ -458,6 +498,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 13px;
             transition: color var(--transition);
             padding: 4px;
+            z-index: 2;
         }
 
         .toggle-pw:hover { color: var(--brand); }
@@ -507,6 +548,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 12px;
             transition: opacity var(--transition);
             opacity: 0;
+            z-index: 2;
         }
 
         .match-icon.visible { opacity: 1; }
@@ -573,7 +615,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         @media (max-width: 560px) {
             .form-grid           { grid-template-columns: 1fr; }
             .field.full          { grid-column: 1; }
-            .bonus-pill          { display: none; }
             .account-type-selector { flex-direction: column; }
             .card-header,
             .card-body           { padding-left: 18px; padding-right: 18px; }
@@ -591,10 +632,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="header-text">
             <h1>Create Account</h1>
             <p>Join Ethio Brokerplace today</p>
-        </div>
-        <div class="bonus-pill">
-            <i class="fas fa-gift"></i>
-            <span>100 ETB bonus</span>
         </div>
     </div>
 
@@ -653,20 +690,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Phone -->
+                <!-- Phone with pre-filled +251 -->
                 <div class="field">
-                    <label for="phone">Phone Number</label>
+                    <label for="phone">Phone Number <span class="label-required">*</span></label>
                     <div class="input-wrap">
-                        <input type="tel" id="phone" name="phone" placeholder="+251 9XX XXX XXX" 
-                               value="<?php echo htmlspecialchars($form_data['phone'] ?? ''); ?>">
+                        <span class="country-code-prefix">+251</span>
+                        <input type="tel" id="phone" name="phone" placeholder="912345678" required 
+                               value="<?php echo htmlspecialchars(preg_replace('/^\+251/', '', $form_data['phone'] ?? '')); ?>"
+                               maxlength="9"
+                               pattern="[0-9]{9}"
+                               title="Please enter exactly 9 digits (e.g., 912345678)">
                         <i class="fas fa-phone left"></i>
                     </div>
                     <div class="phone-hint">
-                        <i class="fas fa-info-circle"></i> Ethiopian format: +251XXXXXXXXX or 09XXXXXXXX
+                        <i class="fas fa-info-circle"></i> Enter <strong>9 digits</strong> after +251 (example: 912345678)
                     </div>
                 </div>
 
-                <!-- Company Fields (hidden by default) -->
+                <!-- Company Fields (NO TIN) -->
                 <div id="companyFields" class="company-fields <?php echo ($form_data['account_type'] ?? '') == 'company' ? 'active' : ''; ?>">
                     <div class="field full">
                         <label for="business_name">Business Name <span class="label-required">*</span></label>
@@ -694,17 +735,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
                     
-                    <div class="field">
-                        <label for="tin_number">TIN Number <span class="label-required">*</span></label>
-                        <div class="input-wrap">
-                            <input type="text" id="tin_number" name="tin_number" placeholder="1234567890" 
-                                   value="<?php echo htmlspecialchars($form_data['tin_number'] ?? ''); ?>">
-                            <i class="fas fa-id-card left"></i>
-                        </div>
-                        <div class="info-text">Tax Identification Number (10-15 digits)</div>
-                    </div>
-                    
-                    <div class="field">
+                    <div class="field full">
                         <label for="business_address">Business Address</label>
                         <div class="input-wrap">
                             <input type="text" id="business_address" name="business_address" placeholder="Addis Ababa, Bole Sub-city" 
@@ -769,16 +800,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         const companyFields = document.getElementById('companyFields');
         const businessName = document.getElementById('business_name');
-        const tinNumber = document.getElementById('tin_number');
         
         if (type === 'company') {
             companyFields.classList.add('active');
             if (businessName) businessName.required = true;
-            if (tinNumber) tinNumber.required = true;
         } else {
             companyFields.classList.remove('active');
             if (businessName) businessName.required = false;
-            if (tinNumber) tinNumber.required = false;
         }
     }
 
@@ -855,19 +883,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     makeToggle('togglePassword', 'password');
     makeToggle('toggleConfirm', 'confirm_password');
     
-    // Phone number formatting hint
+    // Phone number validation - user enters only 9 digits
     const phoneInput = document.getElementById('phone');
     if (phoneInput) {
+        // Restrict to only digits
         phoneInput.addEventListener('input', function() {
-            let value = this.value.replace(/[^0-9+]/g, '');
-            if (value.startsWith('0') && value.length === 10) {
+            let value = this.value.replace(/[^0-9]/g, '');
+            
+            // Limit to 9 digits
+            if (value.length > 9) {
+                value = value.substring(0, 9);
+            }
+            
+            this.value = value;
+            
+            // Validate exactly 9 digits
+            if (value.length === 9) {
                 this.style.borderColor = '#10b981';
-            } else if (value.startsWith('+251') && value.length === 13) {
-                this.style.borderColor = '#10b981';
-            } else if (value === '') {
+                this.style.backgroundColor = '#f0fdf4';
+            } else if (value.length === 0) {
                 this.style.borderColor = '';
+                this.style.backgroundColor = '';
             } else {
                 this.style.borderColor = '#ef4444';
+                this.style.backgroundColor = '#fff5f5';
+            }
+        });
+        
+        // Block non-digit characters
+        phoneInput.addEventListener('keypress', function(e) {
+            if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'Tab') {
+                e.preventDefault();
             }
         });
     }
