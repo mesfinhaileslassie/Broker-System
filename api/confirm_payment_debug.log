@@ -7,3 +7,23 @@
 2026-06-02 20:06:17 - Payment code: 31768
 2026-06-02 20:06:17 - PIN provided: YES
 2026-06-02 20:06:17 - User ID from session: 21
+2026-06-02 23:03:22 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 23:03:22 - Payment code: 36610
+2026-06-02 23:03:22 - PIN provided: YES
+2026-06-02 23:03:22 - User ID from session: 21
+2026-06-02 23:03:22 - Payment confirmed successfully. Checking if product needs to be marked as reserved...
+2026-06-02 23:03:24 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 23:03:24 - Payment code: 36610
+2026-06-02 23:03:24 - PIN provided: YES
+2026-06-02 23:03:24 - User ID from session: 21
+2026-06-02 23:03:24 - Payment confirmed successfully. Checking if product needs to be marked as reserved...
+2026-06-02 23:06:15 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 23:06:15 - Payment code: 36037
+2026-06-02 23:06:15 - PIN provided: YES
+2026-06-02 23:06:15 - User ID from session: 5
+2026-06-02 23:06:15 - Payment confirmed successfully. Checking if product needs to be marked as reserved...
+2026-06-02 23:06:17 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-02 23:06:17 - Payment code: 36037
+2026-06-02 23:06:17 - PIN provided: YES
+2026-06-02 23:06:17 - User ID from session: 5
+2026-06-02 23:06:17 - Payment confirmed successfully. Checking if product needs to be marked as reserved...

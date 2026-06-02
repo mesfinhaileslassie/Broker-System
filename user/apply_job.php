@@ -1,6 +1,5 @@
 <?php
-// user/apply_job.php - Apply for Job with Service Fee Only (No Deposit)
-// REDESIGNED with attractive modern UI
+// user/apply_job.php - Apply for Job with Service Fee Only
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -72,22 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = sanitizeEmail($_POST['email'] ?? '');
     $phone = sanitizePhone($_POST['phone'] ?? '');
     $cover_letter = sanitizeString($_POST['cover_letter'] ?? '');
-    $expected_salary = sanitizeFloat($_POST['expected_salary'] ?? $job['price']);
     $portfolio_url = sanitizeUrl($_POST['portfolio_url'] ?? '');
-    $linkedin_url = sanitizeUrl($_POST['linkedin_url'] ?? '');
-    $availability_date = sanitizeString($_POST['availability_date'] ?? '');
-    $hear_about = sanitizeString($_POST['hear_about'] ?? '');
     
     // File upload for CV/Resume
     $resume_file = '';
     $resume_errors = [];
     
-    if (isset($_FILES['resume']) && $_FILES['resume']['error'] === UPLOAD_ERR_OK) {
+    if (isset($_FILES['resume']) && $_FILES['resume']['error'] === UPLOAD_ERR_OK && $_FILES['resume']['size'] > 0) {
         $allowed_types = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-        $max_size = 5242880; // 5MB
+        $max_size = 5242880;
         
         if ($_FILES['resume']['size'] > $max_size) {
-            $resume_errors[] = "Resume file must be less than 5MB";
+            $resume_errors[] = "File must be less than 5MB";
         }
         
         $finfo = finfo_open(FILEINFO_MIME_TYPE);
@@ -95,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         finfo_close($finfo);
         
         if (!in_array($mime_type, $allowed_types)) {
-            $resume_errors[] = "Resume must be PDF or DOC/DOCX format";
+            $resume_errors[] = "PDF or DOC/DOCX only";
         }
         
         if (empty($resume_errors)) {
@@ -105,152 +100,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (move_uploaded_file($_FILES['resume']['tmp_name'], $target_file)) {
                 $resume_file = $filename;
-            } else {
-                $resume_errors[] = "Failed to upload resume";
             }
         }
-    } else {
-        $resume_errors[] = "Resume/CV is required";
     }
     
-    $errors = [];
-    
-    // Validation
-    if (empty($first_name)) {
-        $errors[] = "First name is required";
-    } elseif (strlen($first_name) < 2) {
-        $errors[] = "First name must be at least 2 characters";
+    // Update user profile
+    if (!empty($first_name) && !empty($last_name)) {
+        $full_name = $first_name . ' ' . $last_name;
+        $conn->query("UPDATE users SET full_name = '$full_name', first_name = '$first_name', last_name = '$last_name', age = $age, gender = '$gender', phone = '$phone', email = '$email' WHERE id = $user_id");
     }
     
-    if (empty($last_name)) {
-        $errors[] = "Last name is required";
-    } elseif (strlen($last_name) < 2) {
-        $errors[] = "Last name must be at least 2 characters";
-    }
+    // Create transaction - ONLY SERVICE FEE
+    $depositAmount = 0;
+    $remainingAmount = $job['price'];
     
-    if ($age < 18 || $age > 100) {
-        $errors[] = "Age must be between 18 and 100";
-    }
+    $stmt = $conn->prepare("
+        INSERT INTO transactions (
+            listing_id, buyer_id, seller_id, total_amount, 
+            deposit_amount, commission_amount, remaining_balance, 
+            status, created_at, cover_letter
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_buyer_deposit', NOW(), ?)
+    ");
+    $stmt->bind_param("iiidddds", $job_id, $user_id, $job['company_id'], $job['price'], $depositAmount, $serviceFee, $remainingAmount, $cover_letter);
+    $stmt->execute();
+    $transaction_id = $conn->insert_id;
     
-    $valid_genders = ['Male', 'Female', 'Other', 'Prefer not to say'];
-    if (!in_array($gender, $valid_genders)) {
-        $errors[] = "Please select a valid gender";
-    }
+    // Generate payment code
+    do {
+        $payment_code = str_pad(random_int(0, 99999), 5, '0', STR_PAD_LEFT);
+        $code_check = $conn->query("SELECT id FROM payment_codes WHERE code = '$payment_code'");
+    } while ($code_check->num_rows > 0);
     
-    if (empty($email)) {
-        $errors[] = "Email address is required";
-    } elseif (!validateEmail($email)) {
-        $errors[] = "Please enter a valid email address";
-    }
+    $expires_at = date('Y-m-d H:i:s', strtotime('+30 minutes'));
     
-    if (empty($phone)) {
-        $errors[] = "Phone number is required";
-    } elseif (!validatePhone($phone)) {
-        $errors[] = "Please enter a valid Ethiopian phone number (+251XXXXXXXXX)";
-    }
+    $stmt2 = $conn->prepare("INSERT INTO payment_codes (code, transaction_id, amount, user_id, type, expires_at, status) VALUES (?, ?, ?, ?, 'service_fee', ?, 'pending')");
+    $stmt2->bind_param("siids", $payment_code, $transaction_id, $serviceFee, $user_id, $expires_at);
+    $stmt2->execute();
     
-    if (empty($cover_letter)) {
-        $errors[] = "Please provide a cover letter explaining why you're a good fit";
-    } elseif (strlen($cover_letter) < 50) {
-        $errors[] = "Cover letter must be at least 50 characters";
-    }
+    // Create notification for company
+    $conn->query("INSERT INTO notifications (user_id, title, message, link, created_at) VALUES ({$job['company_id']}, 'New Job Application', 'A new application has been submitted for {$job['title']}', 'transaction.php?id=$transaction_id', NOW())");
     
-    if ($expected_salary < 0) {
-        $errors[] = "Please enter a valid expected salary";
-    }
+    $conn->close();
     
-    if (!empty($resume_errors)) {
-        $errors = array_merge($errors, $resume_errors);
-    }
-    
-    if (empty($errors)) {
-        $conn->begin_transaction();
-        
-        try {
-            // Update user profile with collected info
-            $update_user = $conn->prepare("
-                UPDATE users 
-                SET full_name = ?, 
-                    first_name = ?,
-                    last_name = ?,
-                    age = ?,
-                    gender = ?,
-                    phone = ?,
-                    email = ?
-                WHERE id = ?
-            ");
-            $full_name = $first_name . ' ' . $last_name;
-            $update_user->bind_param("sssissis", $full_name, $first_name, $last_name, $age, $gender, $phone, $email, $user_id);
-            $update_user->execute();
-            
-            // Create transaction - ONLY SERVICE FEE
-            $stmt = $conn->prepare("
-                INSERT INTO transactions (
-                    listing_id, buyer_id, seller_id, total_amount, 
-                    deposit_amount, commission_amount, remaining_balance, 
-                    status, created_at, cover_letter, expected_salary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_buyer_deposit', NOW(), ?, ?)
-            ");
-            $depositAmount = 0; // No deposit for jobs
-            $remainingAmount = $job['price']; // Full salary to be paid after completion
-            $stmt->bind_param("iiiddddsd", 
-                $job_id, $user_id, $job['company_id'], 
-                $job['price'], $depositAmount, $serviceFee, $remainingAmount,
-                $cover_letter, $expected_salary
-            );
-            $stmt->execute();
-            $transaction_id = $conn->insert_id;
-            
-            // Store application details
-            $app_stmt = $conn->prepare("
-                INSERT INTO job_applications (
-                    transaction_id, job_id, applicant_id, resume_file, portfolio_url, 
-                    linkedin_url, availability_date, cover_letter, expected_salary, 
-                    hear_about, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
-            ");
-            $app_stmt->bind_param("iiisssssss", 
-                $transaction_id, $job_id, $user_id, $resume_file, $portfolio_url,
-                $linkedin_url, $availability_date, $cover_letter, $expected_salary, $hear_about
-            );
-            $app_stmt->execute();
-            
-            // Generate payment code for service fee only
-            do {
-                $payment_code = str_pad(random_int(0, 99999), 5, '0', STR_PAD_LEFT);
-                $code_check = $conn->query("SELECT id FROM payment_codes WHERE code = '$payment_code'");
-            } while ($code_check->num_rows > 0);
-            
-            $expires_at = date('Y-m-d H:i:s', strtotime('+30 minutes'));
-            
-            $stmt2 = $conn->prepare("
-                INSERT INTO payment_codes (code, transaction_id, amount, user_id, type, expires_at, status) 
-                VALUES (?, ?, ?, ?, 'service_fee', ?, 'pending')
-            ");
-            $stmt2->bind_param("siids", $payment_code, $transaction_id, $serviceFee, $user_id, $expires_at);
-            $stmt2->execute();
-            
-            // Create notification for company
-            $conn->query("
-                INSERT INTO notifications (user_id, title, message, link, created_at) 
-                VALUES ({$job['company_id']}, 'New Job Application', 
-                'A new application has been submitted for {$job['title']}', 
-                'transaction.php?id=$transaction_id', NOW())
-            ");
-            
-            $conn->commit();
-            
-            // Redirect to payment page
-            header("Location: pay_application.php?transaction_id=$transaction_id&code=$payment_code");
-            exit;
-            
-        } catch (Exception $e) {
-            $conn->rollback();
-            $error = "Failed to submit application: " . $e->getMessage();
-        }
-    } else {
-        $error = implode('<br>', $errors);
-    }
+    header("Location: pay_application.php?transaction_id=$transaction_id&code=$payment_code");
+    exit;
 }
 
 $conn->close();
@@ -261,177 +154,78 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apply for <?php echo htmlspecialchars($job['title']); ?> - Ethio Brokerplace</title>
+    <title>Apply for <?php echo htmlspecialchars($job['title']); ?></title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #667eea;
-            --primary-dark: #5a67d8;
-            --secondary: #764ba2;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --dark: #1e293b;
-            --gray: #64748b;
-            --light: #f8fafc;
-            --border: #e2e8f0;
-        }
-        
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background: linear-gradient(135deg, #667eea20, #764ba220);
-            min-height: 100vh;
-        }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #667eea15, #764ba215); min-height: 100vh; }
         
-        .apply-container { max-width: 1000px; margin: 40px auto; padding: 0 20px; }
+        .apply-container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
         
-        /* Job Header */
         .job-header {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            background: linear-gradient(135deg, #667eea, #764ba2);
             border-radius: 32px;
-            padding: 40px;
-            margin-bottom: 32px;
+            padding: 32px;
+            margin-bottom: 28px;
             color: white;
-            position: relative;
-            overflow: hidden;
         }
         
-        .job-header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
-            background-size: 30px 30px;
-            animation: moveBackground 40s linear infinite;
-        }
+        .job-title { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+        .company-name { font-size: 14px; opacity: 0.9; margin-bottom: 16px; }
+        .job-salary { font-size: 32px; font-weight: 800; }
+        .job-salary small { font-size: 14px; font-weight: normal; opacity: 0.8; }
         
-        @keyframes moveBackground {
-            0% { transform: translate(0, 0); }
-            100% { transform: translate(30px, 30px); }
-        }
-        
-        .job-badge {
-            display: inline-block;
-            background: rgba(255,255,255,0.2);
-            padding: 6px 14px;
-            border-radius: 30px;
-            font-size: 12px;
-            margin-bottom: 16px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .job-title {
-            font-size: 32px;
-            font-weight: 800;
-            margin-bottom: 12px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .company-name {
-            font-size: 15px;
-            opacity: 0.9;
-            margin-bottom: 20px;
-            position: relative;
-            z-index: 1;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .job-salary {
-            font-size: 36px;
-            font-weight: 800;
-            margin-top: 20px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .job-salary small {
-            font-size: 14px;
-            font-weight: normal;
-            opacity: 0.8;
-        }
-        
-        /* Cards */
         .card {
             background: white;
             border-radius: 28px;
             padding: 32px;
             margin-bottom: 28px;
             box-shadow: 0 20px 35px -10px rgba(0,0,0,0.1);
-            border: 1px solid var(--border);
+            border: 1px solid #e2e8f0;
         }
         
         .card-title {
             font-size: 20px;
             font-weight: 700;
-            color: var(--dark);
+            color: #1e293b;
             margin-bottom: 24px;
             padding-bottom: 16px;
-            border-bottom: 2px solid var(--border);
+            border-bottom: 2px solid #e2e8f0;
             display: flex;
             align-items: center;
             gap: 12px;
         }
         
-        .card-title i {
-            color: var(--primary);
-            font-size: 24px;
-        }
+        .card-title i { color: #667eea; font-size: 24px; }
         
-        /* Form Grid */
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 24px;
-        }
-        
-        .form-group {
-            margin-bottom: 0;
-        }
-        
-        .form-group.full-width {
-            grid-column: span 2;
-        }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+        .form-group.full-width { grid-column: span 2; }
         
         label {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: var(--dark);
+            color: #1e293b;
             font-size: 13px;
         }
         
-        .required {
-            color: var(--danger);
-            margin-left: 4px;
-        }
+        .required { color: #ef4444; margin-left: 4px; }
         
-        .input-wrapper {
-            position: relative;
-        }
-        
+        .input-wrapper { position: relative; }
         .input-wrapper i {
             position: absolute;
             left: 14px;
             top: 50%;
             transform: translateY(-50%);
-            color: var(--gray);
+            color: #94a3b8;
             font-size: 14px;
         }
         
         input, select, textarea {
             width: 100%;
             padding: 12px 16px 12px 42px;
-            border: 2px solid var(--border);
+            border: 2px solid #e2e8f0;
             border-radius: 14px;
             font-size: 14px;
             font-family: inherit;
@@ -441,96 +235,88 @@ $conn->close();
         
         textarea {
             padding: 12px 16px;
-            resize: vertical;
             min-height: 120px;
-        }
-        
-        textarea + i {
-            display: none;
         }
         
         input:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: var(--primary);
+            border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
         }
         
-        /* File Upload */
+        input.valid, select.valid, textarea.valid { border-color: #10b981; background: #f0fdf4; }
+        input.invalid, select.invalid, textarea.invalid { border-color: #ef4444; background: #fef2f2; }
+        
+        .error-msg {
+            font-size: 11px;
+            color: #ef4444;
+            margin-top: 6px;
+            display: none;
+        }
+        
+        .error-msg.show { display: block; }
+        
+        .valid-msg {
+            font-size: 11px;
+            color: #10b981;
+            margin-top: 6px;
+            display: none;
+        }
+        
+        .valid-msg.show { display: block; }
+        
+        .radio-group {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            padding: 10px 0;
+        }
+        
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .radio-option input {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            padding: 0;
+        }
+        
         .file-upload {
-            border: 2px dashed var(--border);
+            border: 2px dashed #e2e8f0;
             border-radius: 14px;
-            padding: 30px;
+            padding: 25px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s;
-            background: var(--light);
+            background: #f8fafc;
         }
         
-        .file-upload:hover {
-            border-color: var(--primary);
-            background: #eef2ff;
-        }
+        .file-upload:hover { border-color: #667eea; background: #eef2ff; }
+        .file-upload i { font-size: 36px; color: #667eea; margin-bottom: 10px; display: block; }
+        .file-upload p { font-size: 13px; color: #64748b; }
+        .file-upload small { font-size: 11px; color: #64748b; }
+        input[type="file"] { display: none; }
         
-        .file-upload i {
-            font-size: 40px;
-            color: var(--primary);
-            margin-bottom: 12px;
-            display: block;
-        }
-        
-        .file-upload p {
-            font-size: 13px;
-            color: var(--gray);
-        }
-        
-        .file-upload small {
-            font-size: 11px;
-            color: var(--gray);
-        }
-        
-        #fileName {
-            margin-top: 12px;
-            font-size: 12px;
-            color: var(--success);
-            display: none;
-        }
-        
-        input[type="file"] {
-            display: none;
-        }
-        
-        /* Payment Box */
         .payment-box {
             background: linear-gradient(135deg, #ecfdf5, #d1fae5);
             border-radius: 24px;
             padding: 24px;
             text-align: center;
-            border: 2px solid var(--success);
+            border: 2px solid #10b981;
+            margin-top: 24px;
         }
         
-        .payment-label {
-            font-size: 13px;
-            color: #065f46;
-            margin-bottom: 8px;
-        }
+        .payment-amount { font-size: 38px; font-weight: 800; color: #059669; }
         
-        .payment-amount {
-            font-size: 42px;
-            font-weight: 800;
-            color: #059669;
-        }
-        
-        .payment-note {
-            font-size: 12px;
-            color: #065f46;
-            margin-top: 12px;
-        }
-        
-        /* Buttons */
         .btn-submit {
             width: 100%;
-            padding: 18px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             border: none;
             border-radius: 50px;
@@ -538,307 +324,338 @@ $conn->close();
             font-weight: 700;
             cursor: pointer;
             transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-top: 16px;
+            margin-top: 24px;
         }
         
-        .btn-submit:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 30px rgba(102,126,234,0.4);
-        }
+        .btn-submit:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(102,126,234,0.4); }
+        .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         
-        /* Alert */
-        .alert {
-            padding: 16px 20px;
-            border-radius: 16px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .alert-error {
-            background: #fee2e2;
-            color: var(--danger);
-            border-left: 4px solid var(--danger);
-        }
-        
-        .alert-success {
-            background: #d1fae5;
-            color: #059669;
-            border-left: 4px solid #059669;
-        }
-        
-        .info-text {
-            font-size: 11px;
-            color: var(--gray);
-            margin-top: 6px;
-        }
-        
-        /* Radio Group */
-        .radio-group {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .radio-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .radio-option input {
-            width: auto;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .radio-option label {
-            margin: 0;
-            font-weight: normal;
-        }
+        .info-text { font-size: 11px; color: #64748b; margin-top: 6px; }
         
         @media (max-width: 768px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-            .form-group.full-width {
-                grid-column: span 1;
-            }
-            .job-title {
-                font-size: 24px;
-            }
-            .job-salary {
-                font-size: 28px;
-            }
-            .card {
-                padding: 24px;
-            }
+            .form-grid { grid-template-columns: 1fr; }
+            .form-group.full-width { grid-column: span 1; }
+            .job-title { font-size: 22px; }
+            .job-salary { font-size: 24px; }
+            .card { padding: 24px; }
         }
     </style>
 </head>
 <body>
 
 <div class="apply-container">
-    <!-- Job Header -->
     <div class="job-header">
-        <div class="job-badge">
-            <i class="fas fa-briefcase"></i> Job Opportunity
-        </div>
         <div class="job-title"><?php echo htmlspecialchars($job['title']); ?></div>
-        <div class="company-name">
-            <i class="fas fa-building"></i> <?php echo htmlspecialchars($job['company_name']); ?>
-            <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px;">
-                <i class="fas fa-check-circle"></i> Verified Employer
-            </span>
-        </div>
-        <div class="job-salary">
-            <?php echo formatMoney($job['price']); ?><small>/month</small>
-        </div>
+        <div class="company-name"><i class="fas fa-building"></i> <?php echo htmlspecialchars($job['company_name']); ?></div>
+        <div class="job-salary"><?php echo formatMoney($job['price']); ?><small>/month</small></div>
     </div>
     
-    <?php if ($error): ?>
-        <div class="alert alert-error">
-            <i class="fas fa-exclamation-circle" style="font-size: 20px;"></i>
-            <div><?php echo $error; ?></div>
-        </div>
-    <?php endif; ?>
-    
-    <!-- Application Form -->
     <div class="card">
         <div class="card-title">
-            <i class="fas fa-user-plus"></i>
-            Complete Your Application
+            <i class="fas fa-user-plus"></i> Complete Your Application
         </div>
         
         <form method="POST" enctype="multipart/form-data" id="applicationForm">
-            <!-- Personal Information Section -->
-            <div style="margin-bottom: 24px;">
-                <h3 style="font-size: 16px; color: var(--dark); margin-bottom: 16px;">
-                    <i class="fas fa-user-circle" style="color: var(--primary);"></i> Personal Information
-                </h3>
-            </div>
-            
             <div class="form-grid">
                 <div class="form-group">
                     <label>First Name <span class="required">*</span></label>
                     <div class="input-wrapper">
                         <i class="fas fa-user"></i>
-                        <input type="text" name="first_name" required placeholder="Enter your first name" 
-                               value="<?php echo htmlspecialchars($user_data['first_name'] ?? ''); ?>">
+                        <input type="text" name="first_name" id="firstName" placeholder="Enter your first name" value="<?php echo htmlspecialchars($user_data['first_name'] ?? ''); ?>">
                     </div>
+                    <div class="error-msg" id="firstNameError">First name is required (min 2 letters)</div>
+                    <div class="valid-msg" id="firstNameValid">✓ Looks good</div>
                 </div>
                 
                 <div class="form-group">
                     <label>Last Name <span class="required">*</span></label>
                     <div class="input-wrapper">
                         <i class="fas fa-user"></i>
-                        <input type="text" name="last_name" required placeholder="Enter your last name"
-                               value="<?php echo htmlspecialchars($user_data['last_name'] ?? ''); ?>">
+                        <input type="text" name="last_name" id="lastName" placeholder="Enter your last name" value="<?php echo htmlspecialchars($user_data['last_name'] ?? ''); ?>">
                     </div>
+                    <div class="error-msg" id="lastNameError">Last name is required (min 2 letters)</div>
+                    <div class="valid-msg" id="lastNameValid">✓ Looks good</div>
                 </div>
                 
                 <div class="form-group">
                     <label>Age <span class="required">*</span></label>
                     <div class="input-wrapper">
                         <i class="fas fa-calendar-alt"></i>
-                        <input type="number" name="age" required placeholder="18-100" min="18" max="100"
-                               value="<?php echo htmlspecialchars($user_data['age'] ?? ''); ?>">
+                        <input type="number" name="age" id="age" placeholder="18-100" min="18" max="100" value="<?php echo htmlspecialchars($user_data['age'] ?? ''); ?>">
                     </div>
+                    <div class="error-msg" id="ageError">Age must be between 18 and 100</div>
+                    <div class="valid-msg" id="ageValid">✓ Looks good</div>
                 </div>
                 
                 <div class="form-group">
                     <label>Gender <span class="required">*</span></label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-venus-mars"></i>
-                        <select name="gender" required>
-                            <option value="">Select gender</option>
-                            <option value="Male" <?php echo ($user_data['gender'] ?? '') == 'Male' ? 'selected' : ''; ?>>Male</option>
-                            <option value="Female" <?php echo ($user_data['gender'] ?? '') == 'Female' ? 'selected' : ''; ?>>Female</option>
-                            <option value="Other" <?php echo ($user_data['gender'] ?? '') == 'Other' ? 'selected' : ''; ?>>Other</option>
-                            <option value="Prefer not to say" <?php echo ($user_data['gender'] ?? '') == 'Prefer not to say' ? 'selected' : ''; ?>>Prefer not to say</option>
-                        </select>
+                    <div class="radio-group" id="genderGroup">
+                        <label class="radio-option">
+                            <input type="radio" name="gender" value="Male" <?php echo ($user_data['gender'] ?? '') == 'Male' ? 'checked' : ''; ?>>
+                            <span>Male</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="gender" value="Female" <?php echo ($user_data['gender'] ?? '') == 'Female' ? 'checked' : ''; ?>>
+                            <span>Female</span>
+                        </label>
                     </div>
+                    <div class="error-msg" id="genderError">Please select Male or Female</div>
                 </div>
                 
                 <div class="form-group">
                     <label>Email Address <span class="required">*</span></label>
                     <div class="input-wrapper">
                         <i class="fas fa-envelope"></i>
-                        <input type="email" name="email" required placeholder="you@example.com"
-                               value="<?php echo htmlspecialchars($user_data['email'] ?? $_SESSION['user_email']); ?>">
+                        <input type="email" name="email" id="email" placeholder="you@example.com" value="<?php echo htmlspecialchars($user_data['email'] ?? $_SESSION['user_email']); ?>">
                     </div>
+                    <div class="error-msg" id="emailError">Enter a valid email address</div>
+                    <div class="valid-msg" id="emailValid">✓ Valid email</div>
                 </div>
                 
                 <div class="form-group">
                     <label>Phone Number <span class="required">*</span></label>
                     <div class="input-wrapper">
                         <i class="fas fa-phone"></i>
-                        <input type="tel" name="phone" required placeholder="+251XXXXXXXXX"
-                               value="<?php echo htmlspecialchars($user_data['phone'] ?? ''); ?>">
+                        <input type="tel" name="phone" id="phone" placeholder="+251912345678" value="<?php echo htmlspecialchars($user_data['phone'] ?? ''); ?>">
                     </div>
-                    <div class="info-text">Format: +251912345678</div>
+                    <div class="error-msg" id="phoneError">Enter valid Ethiopian number (+251XXXXXXXXX)</div>
+                    <div class="valid-msg" id="phoneValid">✓ Valid number</div>
                 </div>
-            </div>
-            
-            <!-- Professional Information -->
-            <div style="margin: 32px 0 24px;">
-                <h3 style="font-size: 16px; color: var(--dark); margin-bottom: 16px;">
-                    <i class="fas fa-briefcase" style="color: var(--primary);"></i> Professional Information
-                </h3>
-            </div>
-            
-            <div class="form-grid">
+                
                 <div class="form-group full-width">
                     <label>Cover Letter <span class="required">*</span></label>
-                    <textarea name="cover_letter" required placeholder="Introduce yourself, explain why you're interested in this position, and highlight your relevant skills and experience..."></textarea>
-                    <div class="info-text">Minimum 50 characters. Be specific about how you can contribute to the company.</div>
+                    <textarea name="cover_letter" id="coverLetter" placeholder="Introduce yourself, explain why you're interested, and highlight your relevant skills... (Minimum 50 characters)"></textarea>
+                    <div class="error-msg" id="coverLetterError">Cover letter must be at least 50 characters</div>
+                    <div class="valid-msg" id="coverLetterValid">✓ Good length</div>
+                    <div class="info-text" id="charCount">0 / 50 characters minimum</div>
                 </div>
                 
                 <div class="form-group">
-                    <label>Expected Salary (ETB/month)</label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-money-bill-wave"></i>
-                        <input type="number" name="expected_salary" step="100" value="<?php echo $job['price']; ?>" min="0">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Availability Date</label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-calendar-check"></i>
-                        <input type="date" name="availability_date">
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Portfolio/Website URL</label>
+                    <label>Portfolio/Website (Optional)</label>
                     <div class="input-wrapper">
                         <i class="fas fa-globe"></i>
-                        <input type="url" name="portfolio_url" placeholder="https://your-portfolio.com">
+                        <input type="url" name="portfolio_url" id="portfolioUrl" placeholder="https://your-portfolio.com">
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label>LinkedIn Profile</label>
-                    <div class="input-wrapper">
-                        <i class="fab fa-linkedin"></i>
-                        <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourprofile">
+                <div class="form-group full-width">
+                    <label>Resume/CV <span class="required">*</span></label>
+                    <div class="file-upload" onclick="document.getElementById('resumeFile').click()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload your Resume/CV</p>
+                        <small>PDF, DOC, or DOCX (Max 5MB)</small>
                     </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>How did you hear about us?</label>
-                    <div class="input-wrapper">
-                        <i class="fas fa-chart-line"></i>
-                        <select name="hear_about">
-                            <option value="">Select</option>
-                            <option value="LinkedIn">LinkedIn</option>
-                            <option value="Facebook">Facebook</option>
-                            <option value="Telegram">Telegram</option>
-                            <option value="Google">Google Search</option>
-                            <option value="Friend">Friend Referral</option>
-                            <option value="Other">Other</option>
-                        </select>
+                    <input type="file" name="resume" id="resumeFile" accept=".pdf,.doc,.docx">
+                    <div id="fileName" style="display: none; margin-top: 10px; padding: 8px; background: #d1fae5; border-radius: 8px; text-align: center;">
+                        <i class="fas fa-check-circle"></i> <span id="selectedFileName"></span>
                     </div>
+                    <div class="error-msg" id="resumeError">Resume/CV is required (PDF, DOC, DOCX)</div>
                 </div>
-            </div>
-            
-            <!-- Resume Upload -->
-            <div style="margin: 32px 0 24px;">
-                <h3 style="font-size: 16px; color: var(--dark); margin-bottom: 16px;">
-                    <i class="fas fa-file-alt" style="color: var(--primary);"></i> Documents
-                </h3>
-            </div>
-            
-            <div class="form-group full-width">
-                <label>Resume/CV <span class="required">*</span></label>
-                <div class="file-upload" onclick="document.getElementById('resumeFile').click()">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                    <p>Click to upload your Resume/CV</p>
-                    <small>PDF, DOC, or DOCX (Max 5MB)</small>
-                </div>
-                <input type="file" name="resume" id="resumeFile" accept=".pdf,.doc,.docx">
-                <div id="fileName" style="display: none; margin-top: 10px; padding: 8px; background: #d1fae5; border-radius: 8px; text-align: center;">
-                    <i class="fas fa-check-circle"></i> <span id="selectedFileName"></span>
-                </div>
-            </div>
-            
-            <!-- Payment Section -->
-            <div style="margin: 32px 0 24px;">
-                <h3 style="font-size: 16px; color: var(--dark); margin-bottom: 16px;">
-                    <i class="fas fa-credit-card" style="color: var(--primary);"></i> Payment Summary
-                </h3>
             </div>
             
             <div class="payment-box">
-                <div class="payment-label">
-                    <i class="fas fa-shield-alt"></i> Service Fee (<?php echo $commissionPercent; ?>%)
-                </div>
-                <div class="payment-amount">
-                    <?php echo formatMoney($serviceFee); ?>
-                </div>
-                <div class="payment-note">
-                    <i class="fas fa-lock"></i> Secure payment held in escrow until job completion
-                </div>
-                <div class="payment-note" style="margin-top: 8px;">
-                    <small>You will pay only the service fee now. The full salary (<?php echo formatMoney($job['price']); ?>) will be paid after you complete the job successfully.</small>
-                </div>
+                <div style="font-size: 13px; color: #065f46;"><i class="fas fa-shield-alt"></i> Service Fee (<?php echo $commissionPercent; ?>%)</div>
+                <div class="payment-amount"><?php echo formatMoney($serviceFee); ?></div>
+                <div style="font-size: 11px; color: #065f46; margin-top: 8px;">Secure payment held in escrow until job completion</div>
             </div>
             
-            <button type="submit" class="btn-submit">
-                <i class="fas fa-paper-plane"></i>
-                Submit Application & Pay Service Fee
+            <button type="submit" class="btn-submit" id="submitBtn">
+                <i class="fas fa-paper-plane"></i> Submit Application & Pay Service Fee
             </button>
         </form>
     </div>
 </div>
 
 <script>
+    // Real-time validation functions
+    function validateFirstName() {
+        const input = document.getElementById('firstName');
+        const value = input.value.trim();
+        const isValid = value.length >= 2 && /^[a-zA-Z\s\'-]+$/.test(value);
+        
+        if (value.length === 0) {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('firstNameError').classList.remove('show');
+            document.getElementById('firstNameValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('firstNameError').classList.remove('show');
+            document.getElementById('firstNameValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('firstNameError').classList.add('show');
+            document.getElementById('firstNameValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validateLastName() {
+        const input = document.getElementById('lastName');
+        const value = input.value.trim();
+        const isValid = value.length >= 2 && /^[a-zA-Z\s\'-]+$/.test(value);
+        
+        if (value.length === 0) {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('lastNameError').classList.remove('show');
+            document.getElementById('lastNameValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('lastNameError').classList.remove('show');
+            document.getElementById('lastNameValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('lastNameError').classList.add('show');
+            document.getElementById('lastNameValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validateAge() {
+        const input = document.getElementById('age');
+        const value = parseInt(input.value);
+        const isValid = value >= 18 && value <= 100;
+        
+        if (input.value === '') {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('ageError').classList.remove('show');
+            document.getElementById('ageValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('ageError').classList.remove('show');
+            document.getElementById('ageValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('ageError').classList.add('show');
+            document.getElementById('ageValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validateGender() {
+        const radios = document.querySelectorAll('input[name="gender"]');
+        let isChecked = false;
+        radios.forEach(radio => { if (radio.checked) isChecked = true; });
+        
+        const errorEl = document.getElementById('genderError');
+        if (!isChecked && document.querySelector('input[name="gender"]:checked') === null) {
+            errorEl.classList.add('show');
+        } else {
+            errorEl.classList.remove('show');
+        }
+        return isChecked;
+    }
+    
+    function validateEmail() {
+        const input = document.getElementById('email');
+        const value = input.value.trim();
+        const isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+        
+        if (value === '') {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('emailError').classList.remove('show');
+            document.getElementById('emailValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('emailError').classList.remove('show');
+            document.getElementById('emailValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('emailError').classList.add('show');
+            document.getElementById('emailValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validatePhone() {
+        const input = document.getElementById('phone');
+        const value = input.value.trim();
+        const isValid = /^\+251[0-9]{9}$/.test(value);
+        
+        if (value === '') {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('phoneError').classList.remove('show');
+            document.getElementById('phoneValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('phoneError').classList.remove('show');
+            document.getElementById('phoneValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('phoneError').classList.add('show');
+            document.getElementById('phoneValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validateCoverLetter() {
+        const input = document.getElementById('coverLetter');
+        const value = input.value.trim();
+        const length = value.length;
+        const isValid = length >= 50;
+        
+        document.getElementById('charCount').innerHTML = `${length} / 50 characters minimum`;
+        
+        if (value === '') {
+            input.classList.remove('valid', 'invalid');
+            document.getElementById('coverLetterError').classList.remove('show');
+            document.getElementById('coverLetterValid').classList.remove('show');
+        } else if (isValid) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            document.getElementById('coverLetterError').classList.remove('show');
+            document.getElementById('coverLetterValid').classList.add('show');
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            document.getElementById('coverLetterError').classList.add('show');
+            document.getElementById('coverLetterValid').classList.remove('show');
+        }
+        return isValid;
+    }
+    
+    function validateResume() {
+        const fileInput = document.getElementById('resumeFile');
+        const hasFile = fileInput.files.length > 0;
+        
+        if (hasFile) {
+            document.getElementById('resumeError').classList.remove('show');
+        } else {
+            document.getElementById('resumeError').classList.add('show');
+        }
+        return hasFile;
+    }
+    
+    function validateForm() {
+        const isValid = validateFirstName() && validateLastName() && validateAge() && 
+                        validateGender() && validateEmail() && validatePhone() && 
+                        validateCoverLetter() && validateResume();
+        
+        document.getElementById('submitBtn').disabled = !isValid;
+        return isValid;
+    }
+    
+    // Attach event listeners
+    document.getElementById('firstName').addEventListener('input', () => { validateFirstName(); validateForm(); });
+    document.getElementById('lastName').addEventListener('input', () => { validateLastName(); validateForm(); });
+    document.getElementById('age').addEventListener('input', () => { validateAge(); validateForm(); });
+    document.querySelectorAll('input[name="gender"]').forEach(radio => {
+        radio.addEventListener('change', () => { validateGender(); validateForm(); });
+    });
+    document.getElementById('email').addEventListener('input', () => { validateEmail(); validateForm(); });
+    document.getElementById('phone').addEventListener('input', () => { validatePhone(); validateForm(); });
+    document.getElementById('coverLetter').addEventListener('input', () => { validateCoverLetter(); validateForm(); });
+    document.getElementById('resumeFile').addEventListener('change', () => { validateResume(); validateForm(); });
+    
     // File upload display
     const fileInput = document.getElementById('resumeFile');
     const fileNameDiv = document.getElementById('fileName');
@@ -848,26 +665,33 @@ $conn->close();
         if (this.files && this.files[0]) {
             selectedFileName.textContent = this.files[0].name;
             fileNameDiv.style.display = 'block';
+            validateResume();
+            validateForm();
         } else {
             fileNameDiv.style.display = 'none';
+            validateResume();
+            validateForm();
         }
     });
     
-    // Phone number formatting
-    const phoneInput = document.querySelector('input[name="phone"]');
-    if (phoneInput) {
-        phoneInput.addEventListener('input', function() {
-            let value = this.value.replace(/[^0-9+]/g, '');
-            if (value.length > 0 && !value.startsWith('+')) {
-                if (value.startsWith('0')) {
-                    value = '+251' + value.substring(1);
-                } else if (value.length === 9) {
-                    value = '+251' + value;
-                }
-                this.value = value;
+    // Phone number auto-format
+    const phoneInput = document.getElementById('phone');
+    phoneInput.addEventListener('input', function() {
+        let value = this.value.replace(/[^0-9+]/g, '');
+        if (value.length > 0 && !value.startsWith('+')) {
+            if (value.startsWith('0')) {
+                value = '+251' + value.substring(1);
+            } else if (value.length === 9) {
+                value = '+251' + value;
             }
-        });
-    }
+            this.value = value;
+        }
+        validatePhone();
+        validateForm();
+    });
+    
+    // Initial validation
+    validateForm();
 </script>
 
 </body>
