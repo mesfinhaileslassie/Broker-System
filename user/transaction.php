@@ -1,6 +1,6 @@
 <?php
 // user/transaction.php - Complete Transaction Page with Escrow and Seller Notifications
-// UPDATED: Added proper job application display
+// UPDATED: Dynamic labels for Buyer/Seller based on transaction type
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -326,6 +326,66 @@ $conn->close();
             font-size: 14px;
         }
         
+        /* Party Cards */
+        .party-card {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid var(--border);
+            height: 100%;
+        }
+        
+        .party-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border);
+        }
+        
+        .party-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .party-icon i { font-size: 24px; color: white; }
+        
+        .party-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+        
+        .party-detail {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: var(--light);
+            border-radius: 16px;
+        }
+        
+        .party-label {
+            font-size: 11px;
+            color: var(--gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .party-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--dark);
+            word-break: break-word;
+        }
+        
         /* Buttons */
         .btn-group { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
         .btn {
@@ -432,8 +492,17 @@ $conn->close();
             border-radius: 12px;
         }
         
+        /* Two Column Layout */
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        
         @media (max-width: 900px) {
             .info-grid { grid-template-columns: repeat(2, 1fr); }
+            .two-columns { grid-template-columns: 1fr; }
         }
         
         @media (max-width: 640px) {
@@ -544,7 +613,7 @@ $conn->close();
     </div>
     
     <!-- Job Application Card (for job applications) -->
-    <?php if ($is_job_application && $service_fee_paid && !$transaction['status'] == 'completed'): ?>
+    <?php if ($is_job_application && $service_fee_paid && $transaction['status'] != 'completed'): ?>
     <div class="application-card">
         <div class="application-icon">
             <i class="fas fa-file-alt"></i>
@@ -631,47 +700,90 @@ $conn->close();
     </div>
     <?php endif; ?>
     
-    <!-- Party Information -->
-    <div class="info-grid">
-        <div class="card">
-            <div class="card-header"><h3><i class="fas fa-user"></i> Buyer Information</h3></div>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Name</div>
-                <div class="info-value" style="font-size: 16px;"><?php echo htmlspecialchars($transaction['buyer_name']); ?></div>
+    <!-- Party Information - Dynamic Labels -->
+    <div class="two-columns">
+        <!-- Left Column: Applicant/Buyer -->
+        <div class="party-card">
+            <div class="party-header">
+                <div class="party-icon">
+                    <i class="fas <?php echo $is_job_application ? 'fa-user-graduate' : 'fa-user'; ?>"></i>
+                </div>
+                <div class="party-title">
+                    <?php echo $is_job_application ? 'Applicant Information' : 'Buyer Information'; ?>
+                </div>
             </div>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Email</div>
-                <div class="info-value" style="font-size: 14px;"><?php echo htmlspecialchars($transaction['buyer_email']); ?></div>
+            
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas fa-user"></i> <?php echo $is_job_application ? 'Full Name' : 'Name'; ?>
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['buyer_name']); ?></div>
             </div>
+            
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas fa-envelope"></i> Email Address
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['buyer_email']); ?></div>
+            </div>
+            
             <?php if ($transaction['buyer_phone']): ?>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Phone</div>
-                <div class="info-value" style="font-size: 14px;"><?php echo htmlspecialchars($transaction['buyer_phone']); ?></div>
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas fa-phone"></i> Phone Number
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['buyer_phone']); ?></div>
             </div>
             <?php endif; ?>
+            
             <div class="btn-group" style="margin-top: 16px;">
-                <a href="chat.php?user=<?php echo $transaction['buyer_id']; ?>" class="btn btn-outline"><i class="fas fa-comment"></i> Message Buyer</a>
+                <a href="chat.php?user=<?php echo $transaction['buyer_id']; ?>" class="btn btn-outline">
+                    <i class="fas fa-comment"></i> 
+                    <?php echo $is_job_application ? 'Message Applicant' : 'Message Buyer'; ?>
+                </a>
             </div>
         </div>
         
-        <div class="card">
-            <div class="card-header"><h3><i class="fas fa-store"></i> Seller Information</h3></div>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Name</div>
-                <div class="info-value" style="font-size: 16px;"><?php echo htmlspecialchars($transaction['seller_name']); ?></div>
+        <!-- Right Column: Employer/Seller -->
+        <div class="party-card">
+            <div class="party-header">
+                <div class="party-icon">
+                    <i class="fas <?php echo $is_job_application ? 'fa-building' : 'fa-store'; ?>"></i>
+                </div>
+                <div class="party-title">
+                    <?php echo $is_job_application ? 'Employer Information' : 'Seller Information'; ?>
+                </div>
             </div>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Email</div>
-                <div class="info-value" style="font-size: 14px;"><?php echo htmlspecialchars($transaction['seller_email']); ?></div>
+            
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas <?php echo $is_job_application ? 'fa-building' : 'fa-user'; ?>"></i> 
+                    <?php echo $is_job_application ? 'Company Name' : 'Name'; ?>
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['seller_name']); ?></div>
             </div>
+            
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas fa-envelope"></i> Email Address
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['seller_email']); ?></div>
+            </div>
+            
             <?php if ($transaction['seller_phone']): ?>
-            <div class="info-item" style="text-align: left;">
-                <div class="info-label">Phone</div>
-                <div class="info-value" style="font-size: 14px;"><?php echo htmlspecialchars($transaction['seller_phone']); ?></div>
+            <div class="party-detail">
+                <div class="party-label">
+                    <i class="fas fa-phone"></i> Phone Number
+                </div>
+                <div class="party-value"><?php echo htmlspecialchars($transaction['seller_phone']); ?></div>
             </div>
             <?php endif; ?>
+            
             <div class="btn-group" style="margin-top: 16px;">
-                <a href="chat.php?user=<?php echo $transaction['seller_id']; ?>" class="btn btn-outline"><i class="fas fa-comment"></i> Message Seller</a>
+                <a href="chat.php?user=<?php echo $transaction['seller_id']; ?>" class="btn btn-outline">
+                    <i class="fas fa-comment"></i> 
+                    <?php echo $is_job_application ? 'Message Employer' : 'Message Seller'; ?>
+                </a>
             </div>
         </div>
     </div>
@@ -696,7 +808,13 @@ $conn->close();
                         <tr>
                             <td><?php echo date('M d, H:i', strtotime($p['created_at'])); ?></td>
                             <td><strong><?php echo formatMoney($p['amount']); ?></strong></td>
-                            <td><?php echo ucfirst(str_replace('_', ' ', $p['type'])); ?></td>
+                            <td><?php 
+                                $type_label = ucfirst(str_replace('_', ' ', $p['type']));
+                                if ($is_job_application && $p['type'] == 'service_fee') {
+                                    $type_label = 'Service Fee';
+                                }
+                                echo $type_label;
+                            ?></td>
                             <td><span class="status-badge" style="background: #d1fae5; color: #059669; padding: 4px 12px;">Confirmed</span></td>
                         </tr>
                     <?php endwhile; ?>
