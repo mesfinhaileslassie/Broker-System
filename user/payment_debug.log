@@ -121,3 +121,14 @@
 2026-06-02 20:32:19 - Remaining balance mode - Amount to pay: 2310000
 2026-06-02 20:32:19 - Generated new payment code: 34154 type: remaining_balance, expires: 2026-06-02 21:02:19
 2026-06-02 20:32:19 - Page rendering completed
+2026-06-02 21:18:54 - ========== NEW PAYMENT ATTEMPT ==========
+2026-06-02 21:18:54 - Transaction ID: 93
+2026-06-02 21:18:54 - Database connection established
+2026-06-02 21:18:54 - User ID: 5, Transaction ID: 93
+2026-06-02 21:18:54 - Transaction found: Mobile Application Developer
+2026-06-02 21:18:54 - Seller ID: 16
+2026-06-02 21:18:54 - Seller Name: Mesfin Haileslassie
+2026-06-02 21:18:54 - Payment amounts - Deposit: 1800.05, Commission: 5400.15, Total: 7200.2
+2026-06-02 21:18:54 - Payment state synced
+2026-06-02 21:18:54 - Generated new payment code: 05567 type: deposit_buyer, expires: 2026-06-02 21:48:54
+2026-06-02 21:18:54 - Page rendering completed

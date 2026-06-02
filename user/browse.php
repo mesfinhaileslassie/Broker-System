@@ -41,11 +41,10 @@ $limit = 12;
 $offset = ($page - 1) * $limit;
 
 // IMPORTANT: Only show AVAILABLE listings (not reserved, not rented)
-// availability_status must be 'available'
 $where = [
     "l.status = 'active'", 
     "l.approval_status = 'approved'",
-    "(l.availability_status = 'available' OR l.availability_status IS NULL)",  // ← FIX: Hide reserved/sold
+    "(l.availability_status = 'available' OR l.availability_status IS NULL)"
 ];
 $params = [];
 $types_param = "";
@@ -100,23 +99,36 @@ switch ($sort) {
         $orderBy = "l.created_at DESC";
 }
 
-// Get total count using the AvailabilityManager for accuracy
-$total = $availabilityManager->getAvailableListingsCount($type, [
-    'search' => $search,
-    'min_price' => $min_price,
-    'max_price' => $max_price,
-    'location' => $location
-]);
-$totalPages = ceil($total / $limit);
+// Build the full query
+$sql = "SELECT l.*, u.full_name as seller_name 
+        FROM listings l 
+        JOIN users u ON l.seller_id = u.id 
+        $whereClause 
+        ORDER BY $orderBy 
+        LIMIT ? OFFSET ?";
 
-// Get listings using AvailabilityManager to ensure only available listings
-$listings = $availabilityManager->getAvailableListings($type, $limit, $offset, [
-    'search' => $search,
-    'min_price' => $min_price,
-    'max_price' => $max_price,
-    'location' => $location,
-    'sort' => $sort
-]);
+$params[] = $limit;
+$params[] = $offset;
+$types_param .= "ii";
+
+$stmt = $conn->prepare($sql);
+if ($params) {
+    $stmt->bind_param($types_param, ...$params);
+}
+$stmt->execute();
+$listings = $stmt->get_result();
+
+// Get total count
+$countSql = "SELECT COUNT(*) as total FROM listings l JOIN users u ON l.seller_id = u.id $whereClause";
+$countStmt = $conn->prepare($countSql);
+$countParams = array_slice($params, 0, -2); // Remove limit and offset
+$countTypes = substr($types_param, 0, -2);
+if ($countParams) {
+    $countStmt->bind_param($countTypes, ...$countParams);
+}
+$countStmt->execute();
+$total = $countStmt->get_result()->fetch_assoc()['total'];
+$totalPages = ceil($total / $limit);
 
 $conn->close();
 ?>
@@ -254,10 +266,19 @@ $conn->close();
                 }
             }
             
+            // CRITICAL FIX: Determine correct detail page URL based on listing type
+            if ($item['type'] == 'job') {
+                $detail_url = 'apply_job.php?id=' . $item['id'];
+            } elseif ($item['type'] == 'rental') {
+                $detail_url = 'rental_booking.php?id=' . $item['id'];
+            } else {
+                $detail_url = 'product.php?id=' . $item['id'];
+            }
+            
             $additional = $item['additional_details'] ? json_decode($item['additional_details'], true) : [];
             $icons = ['product' => '📦', 'job' => '💼', 'rental' => '🏠'];
         ?>
-            <div class="listing-card" onclick="location.href='product.php?id=<?php echo $item['id']; ?>'">
+            <div class="listing-card" onclick="location.href='<?php echo $detail_url; ?>'">
                 <div class="card-image">
                     <?php if ($has_image): ?>
                         <img src="<?php echo $cover_image; ?>" alt="<?php echo htmlspecialchars($item['title']); ?>">
@@ -271,7 +292,7 @@ $conn->close();
                     <span class="card-type">
                         <?php if ($item['type'] == 'rental'): ?>🏡 For Rent
                         <?php elseif ($item['type'] == 'product'): ?>🚗 For Sale
-                        <?php else: ?>💼 Job<?php endif; ?>
+                        <?php else: ?>💼 Job Opportunity<?php endif; ?>
                         <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Available</span>
                     </span>
                     <div class="card-title"><?php echo htmlspecialchars(substr($item['title'], 0, 50)); ?></div>
@@ -292,6 +313,13 @@ $conn->close();
                         <div style="font-size: 12px; color: #64748b;">
                             <?php if (!empty($additional['year'])): ?>📅 <?php echo $additional['year']; ?><?php endif; ?>
                             <?php if (!empty($additional['mileage'])): ?> 📊 <?php echo number_format($additional['mileage']); ?> km<?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($item['type'] == 'job' && !empty($additional)): ?>
+                        <div style="font-size: 12px; color: #64748b;">
+                            <?php if (!empty($additional['employment_type'])): ?>💼 <?php echo $additional['employment_type']; ?><?php endif; ?>
+                            <?php if (!empty($additional['experience_level'])): ?> 📈 <?php echo $additional['experience_level']; ?><?php endif; ?>
                         </div>
                     <?php endif; ?>
                     

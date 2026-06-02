@@ -104,3 +104,74 @@
 (
 )
 
+2026-06-02 21:18:54 - pay_rent.php loaded
+2026-06-02 21:18:54 - GET params: Array
+(
+    [transaction_id] => 93
+)
+
+2026-06-02 21:18:54 - POST params: Array
+(
+)
+
+2026-06-02 21:18:54 - After requireLogin(), user_id: 5
+2026-06-02 21:29:29 - pay_rent.php loaded
+2026-06-02 21:29:29 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:29:29 - POST params: Array
+(
+)
+
+2026-06-02 21:29:35 - pay_rent.php loaded
+2026-06-02 21:29:35 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:29:35 - POST params: Array
+(
+)
+
+2026-06-02 21:31:40 - pay_rent.php loaded
+2026-06-02 21:31:40 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:31:40 - POST params: Array
+(
+)
+
+2026-06-02 21:31:47 - pay_rent.php loaded
+2026-06-02 21:31:47 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:31:47 - POST params: Array
+(
+)
+
+2026-06-02 21:31:53 - pay_rent.php loaded
+2026-06-02 21:31:53 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:31:53 - POST params: Array
+(
+)
+
+2026-06-02 21:33:50 - pay_rent.php loaded
+2026-06-02 21:33:50 - GET params: Array
+(
+    [id] => 93
+)
+
+2026-06-02 21:33:50 - POST params: Array
+(
+)
+
