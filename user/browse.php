@@ -1,5 +1,5 @@
 <?php
-// user/browse.php - Only shows AVAILABLE listings (not reserved)
+// user/browse.php - Only shows AVAILABLE listings (no reserved, no sold, no purchased)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -40,23 +40,57 @@ if ($max_price < 0) $max_price = 0;
 $limit = 12;
 $offset = ($page - 1) * $limit;
 
-// IMPORTANT: Only show AVAILABLE listings (not reserved, not rented)
-$where = [
-    "l.status = 'active'", 
-    "l.approval_status = 'approved'",
-    "(l.availability_status = 'available' OR l.availability_status IS NULL)"
-];
+// ============================================
+// CRITICAL: Only show listings with NO confirmed payments
+// ============================================
+
+// First, get all listing IDs that have confirmed payments
+$confirmed_listings_query = $conn->query("
+    SELECT DISTINCT t.listing_id 
+    FROM transactions t
+    JOIN payments p ON t.id = p.transaction_id 
+    WHERE p.status = 'confirmed' 
+    AND p.type IN ('deposit_buyer', 'service_fee', 'remaining_balance')
+");
+
+$excluded_listing_ids = [];
+if ($confirmed_listings_query && $confirmed_listings_query->num_rows > 0) {
+    while ($row = $confirmed_listings_query->fetch_assoc()) {
+        $excluded_listing_ids[] = $row['listing_id'];
+    }
+}
+
+// Build the exclusion condition
+$exclude_condition = "";
+if (!empty($excluded_listing_ids)) {
+    $exclude_condition = " AND l.id NOT IN (" . implode(',', $excluded_listing_ids) . ") ";
+}
+
+// Build WHERE conditions array
+$where_conditions = [];
 $params = [];
 $types_param = "";
 
+// Base conditions
+$where_conditions[] = "l.status = 'active'";
+$where_conditions[] = "l.approval_status = 'approved'";
+$where_conditions[] = "(l.availability_status = 'available' OR l.availability_status IS NULL)";
+
+// Add exclusion condition if there are excluded IDs
+if (!empty($exclude_condition)) {
+    $where_conditions[] = "l.id NOT IN (" . implode(',', $excluded_listing_ids) . ")";
+}
+
+// Type filter
 if ($type) {
-    $where[] = "l.type = ?";
+    $where_conditions[] = "l.type = ?";
     $params[] = $type;
     $types_param .= "s";
 }
 
+// Search filter
 if ($search) {
-    $where[] = "(l.title LIKE ? OR l.description LIKE ? OR l.location LIKE ?)";
+    $where_conditions[] = "(l.title LIKE ? OR l.description LIKE ? OR l.location LIKE ?)";
     $searchParam = "%$search%";
     $params[] = $searchParam;
     $params[] = $searchParam;
@@ -64,25 +98,28 @@ if ($search) {
     $types_param .= "sss";
 }
 
+// Price filters
 if ($min_price > 0) {
-    $where[] = "l.price >= ?";
+    $where_conditions[] = "l.price >= ?";
     $params[] = $min_price;
     $types_param .= "d";
 }
 
 if ($max_price > 0) {
-    $where[] = "l.price <= ?";
+    $where_conditions[] = "l.price <= ?";
     $params[] = $max_price;
     $types_param .= "d";
 }
 
+// Location filter
 if ($location) {
-    $where[] = "l.location LIKE ?";
+    $where_conditions[] = "l.location LIKE ?";
     $params[] = "%$location%";
     $types_param .= "s";
 }
 
-$whereClause = "WHERE " . implode(" AND ", $where);
+// Build WHERE clause
+$whereClause = "WHERE " . implode(" AND ", $where_conditions);
 
 // Sorting
 switch ($sort) {
@@ -112,23 +149,23 @@ $params[] = $offset;
 $types_param .= "ii";
 
 $stmt = $conn->prepare($sql);
-if ($params) {
+if ($params && !empty($types_param)) {
     $stmt->bind_param($types_param, ...$params);
 }
 $stmt->execute();
 $listings = $stmt->get_result();
 
-// Get total count
+// Get total count with same conditions
 $countSql = "SELECT COUNT(*) as total FROM listings l JOIN users u ON l.seller_id = u.id $whereClause";
 $countStmt = $conn->prepare($countSql);
-$countParams = array_slice($params, 0, -2); // Remove limit and offset
+$countParams = array_slice($params, 0, -2);
 $countTypes = substr($types_param, 0, -2);
-if ($countParams) {
+if ($countParams && !empty($countTypes)) {
     $countStmt->bind_param($countTypes, ...$countParams);
 }
 $countStmt->execute();
-$total = $countStmt->get_result()->fetch_assoc()['total'];
-$totalPages = ceil($total / $limit);
+$total = $countStmt->get_result()->fetch_assoc()['total'] ?? 0;
+$totalPages = $total > 0 ? ceil($total / $limit) : 1;
 
 $conn->close();
 ?>
@@ -266,7 +303,7 @@ $conn->close();
                 }
             }
             
-            // CRITICAL FIX: Determine correct detail page URL based on listing type
+            // Determine correct detail page URL based on listing type
             if ($item['type'] == 'job') {
                 $detail_url = 'apply_job.php?id=' . $item['id'];
             } elseif ($item['type'] == 'rental') {

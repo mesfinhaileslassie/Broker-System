@@ -1,6 +1,6 @@
 <?php
 // admin/negotiations.php - Complete Negotiations Management System
-// Jobs only require commission, no deposit
+// Jobs go to pending_payment after approval
 
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
@@ -37,7 +37,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!$is_job && $deposit <= 0) {
             $error = "Deposit amount is required for product/rental listings";
         } else {
-            // For jobs, set deposit to 0
             $deposit = $is_job ? 0 : $deposit;
             
             $conn->query("
@@ -103,6 +102,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
     } elseif ($action === 'approve_listing') {
+        $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
+        $listing = $conn->query("SELECT title, type FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
+        
+        if ($listing['type'] == 'job') {
+            // Jobs go to pending_payment - employer must pay commission
+            $conn->query("
+                UPDATE listings 
+                SET approval_status = 'approved',
+                    status = 'pending_payment',
+                    approved_at = NOW()
+                WHERE id = {$neg['listing_id']}
+            ");
+            
+            $conn->query("
+                INSERT INTO notifications (user_id, title, message, link, created_at) 
+                VALUES ({$neg['seller_id']}, '✅ Job Approved - Payment Required', 
+                'Your job listing \"{$listing['title']}\" has been approved! Please pay the commission to activate it and start receiving applications.', 
+                '/broker_system/user/listings.php', NOW())
+            ");
+            
+            $message = "Job approved! The employer must pay the commission to activate the listing.";
+        } else {
+            // Products/Rentals go active immediately
+            $conn->query("
+                UPDATE listings 
+                SET approval_status = 'approved',
+                    status = 'active',
+                    approved_at = NOW()
+                WHERE id = {$neg['listing_id']}
+            ");
+            
+            $conn->query("
+                INSERT INTO notifications (user_id, title, message, link, created_at) 
+                VALUES ({$neg['seller_id']}, '✅ Listing Approved', 
+                'Congratulations! Your listing \"{$listing['title']}\" has been approved and is now active.', 
+                '/broker_system/user/listings.php', NOW())
+            ");
+            
+            $message = "Listing approved and is now active!";
+        }
+        
         $conn->query("
             UPDATE listing_negotiations 
             SET status = 'approved',
@@ -110,26 +150,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 updated_at = NOW()
             WHERE id = $negotiation_id
         ");
-        
-        $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
-        $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
-        
-        $conn->query("
-            UPDATE listings 
-            SET status = 'active',
-                approval_status = 'approved',
-                approved_at = NOW()
-            WHERE id = {$neg['listing_id']}
-        ");
-        
-        $conn->query("
-            INSERT INTO notifications (user_id, title, message, link, created_at) 
-            VALUES ({$neg['seller_id']}, '✅ Listing Approved', 
-            'Congratulations! Your listing \"{$listing['title']}\" has been approved. You can now publish it.', 
-            '/broker_system/user/listings.php', NOW())
-        ");
-        
-        $message = "Listing has been approved! The seller can now publish it.";
     }
 }
 
@@ -157,7 +177,7 @@ if ($search) {
 
 // Get negotiations
 $negotiations = $conn->query("
-    SELECT ln.*, l.title, l.type, l.price, l.id as listing_id,
+    SELECT ln.*, l.title, l.type, l.price, l.id as listing_id, l.status as listing_status,
            u.full_name as seller_name, u.email as seller_email, u.id as seller_id
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
@@ -288,9 +308,6 @@ $conn->close();
             0% { transform: translate(0, 0); }
             100% { transform: translate(30px, 30px); }
         }
-        .welcome-content { position: relative; z-index: 1; }
-        .welcome-banner h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
-        .welcome-banner p { opacity: 0.9; }
 
         .filters-bar {
             background: white;
@@ -332,8 +349,7 @@ $conn->close();
         }
         .filter-tab:hover, .filter-tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-color: transparent; }
 
-        .alert { padding: 1rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .alert { padding: 1rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 12px; }
         .alert-success { background: #d1fae5; color: #059669; border-left: 4px solid #059669; }
         .alert-error { background: #fee2e2; color: #dc2626; border-left: 4px solid #dc2626; }
 
@@ -527,7 +543,6 @@ $conn->close();
             .search-box { max-width: 100%; }
             .filter-tabs { justify-content: center; }
             .action-buttons { flex-direction: column; }
-            .form-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -611,20 +626,16 @@ $conn->close();
             <div class="welcome-banner">
                 <div class="welcome-content">
                     <h1>Commission Negotiations</h1>
-                    <p>Send proposals to sellers. Approve after seller accepts.</p>
+                    <p>Send proposals to sellers/employers. Approve after acceptance.</p>
                 </div>
             </div>
 
             <?php if ($message): ?>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i> <?php echo $message; ?>
-                </div>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo $message; ?></div>
             <?php endif; ?>
 
             <?php if ($error): ?>
-                <div class="alert alert-error">
-                    <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
-                </div>
+                <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo $error; ?></div>
             <?php endif; ?>
 
             <div class="stats-grid">
@@ -766,7 +777,7 @@ $conn->close();
                                     </span>
                                     
                                 <?php elseif ($neg['status'] == 'accepted'): ?>
-                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Approve this listing? The seller will be notified and can publish.')">
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Approve this listing? <?php echo $is_job ? 'The employer will need to pay commission to activate.' : 'The listing will become active immediately.'; ?>')">
                                         <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
                                         <input type="hidden" name="action" value="approve_listing">
                                         <button type="submit" class="btn btn-success">
@@ -775,9 +786,15 @@ $conn->close();
                                     </form>
                                     
                                 <?php elseif ($neg['status'] == 'approved'): ?>
-                                    <span class="badge" style="background: #10b981; color: white; padding: 8px 16px;">
-                                        <i class="fas fa-check-double"></i> Listing Approved
-                                    </span>
+                                    <?php if ($is_job && $neg['listing_status'] == 'pending_payment'): ?>
+                                        <span class="badge" style="background: #f59e0b; color: white; padding: 8px 16px;">
+                                            <i class="fas fa-clock"></i> Awaiting Employer Payment
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge" style="background: #10b981; color: white; padding: 8px 16px;">
+                                            <i class="fas fa-check-double"></i> Listing Active
+                                        </span>
+                                    <?php endif; ?>
                                     
                                 <?php elseif ($neg['status'] == 'rejected'): ?>
                                     <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>, <?php echo $is_job ? 'true' : 'false'; ?>)" class="btn btn-primary">

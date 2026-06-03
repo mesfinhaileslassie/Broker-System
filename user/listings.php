@@ -1,5 +1,6 @@
 <?php
 // user/listings.php - My Listings Page with Full Negotiation Buttons
+// FIXED: Added Pay Commission button for jobs with pending_payment status
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -33,11 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE id = $negotiation_id AND seller_id = $user_id
         ");
         
-        // Get listing info for notification
         $neg = $conn->query("SELECT listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
         $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
         
-        // Notify admin
         $admin = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetch_assoc();
         $notif_stmt = $conn->prepare("
             INSERT INTO notifications (user_id, title, message, created_at) 
@@ -74,7 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE id = $negotiation_id AND seller_id = $user_id
         ");
         
-        // Notify admin
         $admin = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetch_assoc();
         $notif_stmt = $conn->prepare("
             INSERT INTO notifications (user_id, title, message, created_at) 
@@ -96,6 +94,8 @@ if ($status == 'active') {
     $where .= " AND l.status = 'active' AND l.approval_status = 'approved'";
 } elseif ($status == 'pending') {
     $where .= " AND l.approval_status = 'approved' AND l.status = 'pending'";
+} elseif ($status == 'pending_payment') {
+    $where .= " AND l.approval_status = 'approved' AND l.status = 'pending_payment'";
 } elseif ($status == 'waiting') {
     $where .= " AND l.approval_status = 'pending'";
 } elseif ($status == 'negotiating') {
@@ -121,7 +121,8 @@ $listings = $conn->query("
 $counts = [
     'all' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id")->fetch_assoc()['count'],
     'active' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND status = 'active' AND approval_status = 'approved'")->fetch_assoc()['count'],
-    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending'")->fetch_assoc()['count'],
+    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending_payment'")->fetch_assoc()['count'],
+    'pending_deposit' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending'")->fetch_assoc()['count'],
     'waiting' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'pending'")->fetch_assoc()['count'],
     'negotiating' => $conn->query("
         SELECT COUNT(*) as count FROM listing_negotiations ln 
@@ -309,8 +310,8 @@ $conn->close();
     .badge-danger { background: #fee2e2; color: #dc2626; }
     .badge-info { background: #dbeafe; color: #2563eb; }
     .badge-negotiating { background: #ede9fe; color: #6b21a5; }
+    .badge-pending-payment { background: #fef3c7; color: #92400e; }
     
-    /* Negotiation Box */
     .negotiation-box {
         background: #f8fafc;
         border-radius: 16px;
@@ -434,13 +435,17 @@ $conn->close();
         color: #667eea;
     }
     
-    .btn-sm {
-        padding: 6px 12px;
+    .payment-info {
+        background: #fef3c7;
+        padding: 12px;
+        border-radius: 12px;
+        margin: 12px 0;
         font-size: 12px;
     }
     
-    .payment-info {
-        background: #fef3c7;
+    .payment-info-pending {
+        background: #dbeafe;
+        border-left: 4px solid #667eea;
         padding: 12px;
         border-radius: 12px;
         margin: 12px 0;
@@ -509,7 +514,6 @@ $conn->close();
         color: #64748b;
     }
     
-    /* Modal */
     .modal {
         display: none;
         position: fixed;
@@ -611,6 +615,12 @@ $conn->close();
         border-left: 4px solid #dc2626;
     }
     
+    .info-text {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 6px;
+    }
+    
     @media (max-width: 768px) {
         .listings-grid {
             grid-template-columns: 1fr;
@@ -659,7 +669,7 @@ $conn->close();
     <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div>
 <?php endif; ?>
 
-<!-- Tabs -->
+<!-- Tabs - Updated with pending_payment -->
 <div class="tabs">
     <a href="?status=all" class="tab <?php echo $status == 'all' ? 'active' : ''; ?>">
         All <span class="count"><?php echo $counts['all']; ?></span>
@@ -667,8 +677,11 @@ $conn->close();
     <a href="?status=active" class="tab <?php echo $status == 'active' ? 'active' : ''; ?>">
         Active <span class="count"><?php echo $counts['active']; ?></span>
     </a>
-    <a href="?status=pending" class="tab <?php echo $status == 'pending' ? 'active' : ''; ?>">
-        Need Payment <span class="count"><?php echo $counts['pending_payment']; ?></span>
+    <a href="?status=pending_deposit" class="tab <?php echo $status == 'pending_deposit' ? 'active' : ''; ?>">
+        Need Deposit <span class="count"><?php echo $counts['pending_deposit']; ?></span>
+    </a>
+    <a href="?status=pending_payment" class="tab <?php echo $status == 'pending_payment' ? 'active' : ''; ?>">
+        Need Commission <span class="count"><?php echo $counts['pending_payment']; ?></span>
     </a>
     <a href="?status=negotiating" class="tab <?php echo $status == 'negotiating' ? 'active' : ''; ?>">
         🤝 Negotiating <span class="count"><?php echo $counts['negotiating']; ?></span>
@@ -692,6 +705,9 @@ $conn->close();
             $is_awaiting_payment = ($neg_status == 'agreement_accepted');
             $can_accept = ($neg_status == 'commission_proposed');
             $can_counter = ($neg_status == 'commission_proposed');
+            $is_job_listing = ($listing['type'] == 'job');
+            $commission_percent = $listing['admin_commission_percent'] ?? 15;
+            $commission_amount = round($listing['price'] * ($commission_percent / 100), 2);
         ?>
             <div class="listing-card">
                 <div class="card-image">
@@ -712,7 +728,9 @@ $conn->close();
                         if ($listing['approval_status'] == 'approved' && $listing['status'] == 'active') {
                             $status_badge = '<span class="badge badge-success">✓ Active</span>';
                         } elseif ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending') {
-                            $status_badge = '<span class="badge badge-warning">⏳ Awaiting Payment</span>';
+                            $status_badge = '<span class="badge badge-warning">⏳ Awaiting Deposit</span>';
+                        } elseif ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending_payment') {
+                            $status_badge = '<span class="badge badge-pending-payment">⏳ Awaiting Commission Payment</span>';
                         } elseif ($listing['approval_status'] == 'pending') {
                             $status_badge = '<span class="badge badge-warning">⏳ Pending Approval</span>';
                         } elseif ($listing['approval_status'] == 'rejected') {
@@ -763,7 +781,6 @@ $conn->close();
                                 <?php endif; ?>
                             <?php endif; ?>
                             
-                            <!-- NEGOTIATION BUTTONS -->
                             <div class="btn-group">
                                 <?php if ($can_accept && !$is_waiting_for_admin && !$is_awaiting_payment): ?>
                                     <form method="POST" style="display: inline; flex: 1;">
@@ -799,8 +816,23 @@ $conn->close();
                         </div>
                     <?php endif; ?>
                     
-                    <!-- Payment Required Box (for approved listings waiting for payment) -->
-                    <?php if ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending' && !$has_negotiation): ?>
+                    <!-- ============================================ -->
+                    <!-- PAY COMMISSION BUTTON FOR JOBS - FIXED -->
+                    <!-- ============================================ -->
+                    <?php if ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending_payment' && $is_job_listing): ?>
+                        <div class="payment-info-pending">
+                            <strong><i class="fas fa-credit-card"></i> Activate Your Job Listing</strong><br>
+                            Pay the commission to make your job visible to applicants.
+                            <div class="btn-group" style="margin-top: 12px;">
+                                <a href="pay_job_commission.php?listing_id=<?php echo $listing['id']; ?>" class="btn btn-primary" style="flex: 1;">
+                                    <i class="fas fa-credit-card"></i> Pay Commission (<?php echo $commission_percent; ?>% - <?php echo formatMoney($commission_amount); ?>)
+                                </a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <!-- Payment Required Box (for products/rentals waiting for deposit) -->
+                    <?php if ($listing['approval_status'] == 'approved' && $listing['status'] == 'pending' && !$has_negotiation && !$is_job_listing): ?>
                         <?php
                         $deposit_percent = $listing['admin_deposit_percent'] ?? 30;
                         $commission_percent = $listing['admin_commission_percent'] ?? 15;
@@ -821,10 +853,33 @@ $conn->close();
                         </div>
                     <?php endif; ?>
                     
+                    <!-- SELLER PAYMENT SUMMARY -->
                     <?php
                     $sp = $listing['seller_payment'] ?? null;
-                    if ($sp && $sp['has_deposit_payment']): ?>
-                        <div class="seller-payment-summary" id="payment-summary-<?php echo $listing['id']; ?>">
+                    if ($sp && $sp['has_deposit_payment']): 
+                        $is_job_card = ($listing['type'] == 'job');
+                    ?>
+                    <div class="seller-payment-summary" id="payment-summary-<?php echo $listing['id']; ?>">
+                        <?php if ($is_job_card): ?>
+                            <!-- JOB LISTING - No Pay Remaining Balance button -->
+                            <strong><i class="fas fa-chart-pie"></i> Payment Summary</strong>
+                            <div class="pay-row">
+                                <span>💰 Monthly Salary</span>
+                                <span><?php echo formatMoney($sp['total_price']); ?></span>
+                            </div>
+                            <div class="pay-row">
+                                <span>📋 Service Fee (15%)</span>
+                                <span><?php echo formatMoney($sp['total_price'] * 0.15); ?></span>
+                            </div>
+                            <div class="pay-row remaining">
+                                <span>💵 You Will Receive</span>
+                                <span><?php echo formatMoney($sp['total_price'] * 0.85); ?></span>
+                            </div>
+                            <div class="info-text" style="margin-top: 8px; color: #059669;">
+                                <i class="fas fa-info-circle"></i> Applicants pay the service fee. You receive the full salary after job completion.
+                            </div>
+                        <?php else: ?>
+                            <!-- PRODUCT/RENTAL LISTING - Show Pay Remaining Balance if applicable -->
                             <strong><i class="fas fa-chart-pie"></i> Your Payment Status</strong>
                             <div class="pay-row">
                                 <span>Total Price</span>
@@ -848,11 +903,12 @@ $conn->close();
                                     <i class="fas fa-wallet"></i> Pay Remaining Balance
                                 </button>
                             <?php endif; ?>
-                        </div>
+                        <?php endif; ?>
+                    </div>
                     <?php endif; ?>
 
                     <!-- Regular Action Buttons (for non-negotiation listings) -->
-                    <?php if (!$has_negotiation && !($listing['approval_status'] == 'approved' && $listing['status'] == 'pending')): ?>
+                    <?php if (!$has_negotiation && !($listing['approval_status'] == 'approved' && in_array($listing['status'], ['pending', 'pending_payment']))): ?>
                         <div class="btn-group">
                             <a href="product.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline" style="flex: 1;">
                                 <i class="fas fa-eye"></i> 👁️ View
@@ -923,7 +979,6 @@ function closeCounterModal() {
     document.getElementById('counterModal').style.display = 'none';
 }
 
-// Close modal when clicking outside
 window.onclick = function(event) {
     const modal = document.getElementById('counterModal');
     if (event.target === modal) {
@@ -934,6 +989,7 @@ window.onclick = function(event) {
 document.querySelectorAll('.pay-remaining-btn').forEach(btn => {
     btn.addEventListener('click', async function() {
         const listingId = this.dataset.listingId;
+        
         if (!confirm('Are you sure you want to pay the remaining balance?')) {
             return;
         }
