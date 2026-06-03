@@ -1,13 +1,12 @@
 <?php
-// admin/negotiations.php - Complete Negotiations Management System
-// FIXED: No session conflicts, proper proposal workflow
+// admin/negotiations.php - Complete Negotiations Management System with Approve Button
 
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Check admin login - Direct check without including auth.php
+// Check admin login
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header('Location: /broker_system/admin/login.php');
     exit;
@@ -90,6 +89,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $message = "Proposal updated and sent successfully!";
         }
+        
+    } elseif ($action === 'approve_listing') {
+        // NEW: Admin approves after seller accepts
+        $conn->query("
+            UPDATE listing_negotiations 
+            SET status = 'approved',
+                approved_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $negotiation_id
+        ");
+        
+        $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
+        $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
+        
+        // Update listing to active
+        $conn->query("
+            UPDATE listings 
+            SET status = 'active',
+                approval_status = 'approved',
+                approved_at = NOW()
+            WHERE id = {$neg['listing_id']}
+        ");
+        
+        // Notify seller
+        $conn->query("
+            INSERT INTO notifications (user_id, title, message, link, created_at) 
+            VALUES ({$neg['seller_id']}, '✅ Listing Approved', 
+            'Congratulations! Your listing \"{$listing['title']}\" has been approved. You can now publish it.', 
+            '/broker_system/user/listings.php', NOW())
+        ");
+        
+        $message = "Listing has been approved! The seller can now publish it.";
     }
 }
 
@@ -105,6 +136,8 @@ if ($filter === 'pending') {
     $where = "ln.status = 'proposal_sent'";
 } elseif ($filter === 'accepted') {
     $where = "ln.status = 'accepted'";
+} elseif ($filter === 'approved') {
+    $where = "ln.status = 'approved'";
 } elseif ($filter === 'rejected') {
     $where = "ln.status = 'rejected'";
 }
@@ -116,17 +149,17 @@ if ($search) {
 // Get negotiations
 $negotiations = $conn->query("
     SELECT ln.*, l.title, l.type, l.price, l.id as listing_id,
-           u.full_name as seller_name, u.email as seller_email, u.id as seller_id,
-           (SELECT COUNT(*) FROM negotiation_messages WHERE negotiation_id = ln.id AND is_read = 0 AND sender_type = 'seller') as unread_count
+           u.full_name as seller_name, u.email as seller_email, u.id as seller_id
     FROM listing_negotiations ln
     JOIN listings l ON ln.listing_id = l.id
     JOIN users u ON ln.seller_id = u.id
     WHERE $where
     ORDER BY 
         CASE 
-            WHEN ln.status = 'proposal_sent' THEN 1
-            WHEN ln.status = 'under_review' THEN 2
-            ELSE 3
+            WHEN ln.status = 'accepted' THEN 1
+            WHEN ln.status = 'proposal_sent' THEN 2
+            WHEN ln.status = 'under_review' THEN 3
+            ELSE 4
         END,
         ln.created_at DESC
 ");
@@ -137,6 +170,7 @@ $stats = [
     'pending' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'under_review'")->fetch_assoc()['count'] ?? 0,
     'proposal_sent' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'proposal_sent'")->fetch_assoc()['count'] ?? 0,
     'accepted' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'accepted'")->fetch_assoc()['count'] ?? 0,
+    'approved' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'approved'")->fetch_assoc()['count'] ?? 0,
     'rejected' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'rejected'")->fetch_assoc()['count'] ?? 0,
 ];
 
@@ -210,33 +244,19 @@ $conn->close();
         /* Stats Cards */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 1.5rem;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 1rem;
             margin-bottom: 2rem;
         }
         .stat-card {
             background: white;
-            border-radius: 20px;
-            padding: 1.5rem;
-            transition: all 0.3s;
+            border-radius: 16px;
+            padding: 1rem;
+            text-align: center;
             border: 1px solid #e2e8f0;
-            position: relative;
-            overflow: hidden;
         }
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 4px;
-            height: 100%;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-        }
-        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 20px 30px -12px rgba(0,0,0,0.15); }
-        .stat-icon { width: 50px; height: 50px; background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
-        .stat-icon i { font-size: 24px; color: #667eea; }
-        .stat-value { font-size: 28px; font-weight: 800; color: #0f172a; }
-        .stat-label { font-size: 13px; color: #64748b; margin-top: 6px; font-weight: 500; }
+        .stat-value { font-size: 1.5rem; font-weight: 800; color: #0f172a; }
+        .stat-label { font-size: 0.7rem; color: #64748b; margin-top: 4px; }
 
         /* Welcome Banner */
         .welcome-banner {
@@ -295,9 +315,9 @@ $conn->close();
         .search-box input { border: none; outline: none; font-size: 0.85rem; width: 100%; background: transparent; }
         .filter-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
         .filter-tab {
-            padding: 0.5rem 1.2rem;
+            padding: 0.4rem 1rem;
             border-radius: 30px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
@@ -351,6 +371,7 @@ $conn->close();
         .badge-under_review { background: #fef3c7; color: #92400e; }
         .badge-proposal_sent { background: #dbeafe; color: #1e40af; }
         .badge-accepted { background: #d1fae5; color: #059669; }
+        .badge-approved { background: #10b981; color: white; }
         .badge-rejected { background: #fee2e2; color: #dc2626; }
         
         .seller-info {
@@ -470,16 +491,10 @@ $conn->close();
             font-family: inherit;
             transition: all 0.3s;
         }
-        .form-group input:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
-        }
         .form-group textarea { resize: vertical; min-height: 100px; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         .modal-buttons { display: flex; gap: 12px; margin-top: 24px; }
         .modal-buttons button { flex: 1; padding: 12px; border-radius: 40px; font-weight: 600; cursor: pointer; border: none; transition: all 0.3s; }
-        .required-star { color: #ef4444; margin-left: 4px; }
 
         /* Empty State */
         .empty-state {
@@ -511,9 +526,7 @@ $conn->close();
             .filters-bar { flex-direction: column; align-items: stretch; }
             .search-box { max-width: 100%; }
             .filter-tabs { justify-content: center; }
-            .offer-grid { flex-direction: column; gap: 0.75rem; }
             .action-buttons { flex-direction: column; }
-            .form-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -553,8 +566,8 @@ $conn->close();
             </a>
             <a href="negotiations.php" class="menu-item active">
                 <i class="fas fa-handshake"></i> Negotiations
-                <?php if (($stats['pending'] + $stats['proposal_sent']) > 0): ?>
-                    <span class="badge-count"><?php echo $stats['pending'] + $stats['proposal_sent']; ?></span>
+                <?php if (($stats['pending'] + $stats['proposal_sent'] + $stats['accepted']) > 0): ?>
+                    <span class="badge-count"><?php echo $stats['pending'] + $stats['proposal_sent'] + $stats['accepted']; ?></span>
                 <?php endif; ?>
             </a>
             <a href="disputes.php" class="menu-item">
@@ -600,7 +613,7 @@ $conn->close();
             <div class="welcome-banner">
                 <div class="welcome-content">
                     <h1>Commission Negotiations</h1>
-                    <p>Set commission and deposit amounts for listings. Sellers will review and accept proposals.</p>
+                    <p>Send proposals to sellers. Approve after seller accepts.</p>
                 </div>
             </div>
 
@@ -618,31 +631,12 @@ $conn->close();
 
             <!-- Stats Cards -->
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-clock"></i></div>
-                    <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                    <div class="stat-label">Pending Review</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-paper-plane"></i></div>
-                    <div class="stat-value"><?php echo $stats['proposal_sent']; ?></div>
-                    <div class="stat-label">Proposal Sent</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
-                    <div class="stat-value"><?php echo $stats['accepted']; ?></div>
-                    <div class="stat-label">Accepted</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
-                    <div class="stat-value"><?php echo $stats['rejected']; ?></div>
-                    <div class="stat-label">Rejected</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-chart-simple"></i></div>
-                    <div class="stat-value"><?php echo $stats['total']; ?></div>
-                    <div class="stat-label">Total Negotiations</div>
-                </div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['pending']; ?></div><div class="stat-label">Pending</div></div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['proposal_sent']; ?></div><div class="stat-label">Proposal Sent</div></div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['accepted']; ?></div><div class="stat-label">Accepted</div></div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['approved']; ?></div><div class="stat-label">Approved</div></div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['rejected']; ?></div><div class="stat-label">Rejected</div></div>
+                <div class="stat-card"><div class="stat-value"><?php echo $stats['total']; ?></div><div class="stat-label">Total</div></div>
             </div>
 
             <!-- Filters -->
@@ -656,9 +650,10 @@ $conn->close();
                 </div>
                 <div class="filter-tabs">
                     <a href="?filter=all&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'all' ? 'active' : ''; ?>">All</a>
-                    <a href="?filter=pending&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'pending' ? 'active' : ''; ?>">Pending Review</a>
+                    <a href="?filter=pending&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'pending' ? 'active' : ''; ?>">Pending</a>
                     <a href="?filter=proposal_sent&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'proposal_sent' ? 'active' : ''; ?>">Proposal Sent</a>
                     <a href="?filter=accepted&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'accepted' ? 'active' : ''; ?>">Accepted</a>
+                    <a href="?filter=approved&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'approved' ? 'active' : ''; ?>">Approved</a>
                     <a href="?filter=rejected&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'rejected' ? 'active' : ''; ?>">Rejected</a>
                 </div>
             </div>
@@ -678,13 +673,18 @@ $conn->close();
                                 break;
                             case 'proposal_sent':
                                 $status_class = 'badge-proposal_sent';
-                                $status_text = 'Proposal Sent - Awaiting Seller Response';
+                                $status_text = 'Proposal Sent';
                                 $status_icon = 'fa-paper-plane';
                                 break;
                             case 'accepted':
                                 $status_class = 'badge-accepted';
-                                $status_text = 'Accepted';
+                                $status_text = 'Accepted - Awaiting Admin Approval';
                                 $status_icon = 'fa-check-circle';
+                                break;
+                            case 'approved':
+                                $status_class = 'badge-approved';
+                                $status_text = 'Approved';
+                                $status_icon = 'fa-check-double';
                                 break;
                             case 'rejected':
                                 $status_class = 'badge-rejected';
@@ -746,7 +746,7 @@ $conn->close();
                                 </div>
                                 
                                 <?php if ($neg['admin_notes']): ?>
-                                <div class="counter-message" style="background: #dbeafe; border-left-color: #667eea; margin-top: 8px; padding: 8px 12px; border-radius: 8px;">
+                                <div style="background: #dbeafe; border-left-color: #667eea; margin-top: 8px; padding: 8px 12px; border-radius: 8px;">
                                     <i class="fas fa-sticky-note"></i> <strong>Admin Note:</strong> <?php echo htmlspecialchars($neg['admin_notes']); ?>
                                 </div>
                                 <?php endif; ?>
@@ -762,9 +762,24 @@ $conn->close();
                                     <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
                                         <i class="fas fa-edit"></i> Update Proposal
                                     </button>
-                                    <button onclick="openResendModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-success">
-                                        <i class="fas fa-paper-plane"></i> Resend Proposal
-                                    </button>
+                                    <span class="badge" style="background: #dbeafe; color: #1e40af; padding: 8px 16px;">
+                                        <i class="fas fa-clock"></i> Waiting for Seller
+                                    </span>
+                                    
+                                <?php elseif ($neg['status'] == 'accepted'): ?>
+                                    <!-- APPROVE BUTTON - Seller has accepted the proposal -->
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('Approve this listing? The seller will be notified and can publish.')">
+                                        <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
+                                        <input type="hidden" name="action" value="approve_listing">
+                                        <button type="submit" class="btn btn-success">
+                                            <i class="fas fa-check-circle"></i> Approve Listing
+                                        </button>
+                                    </form>
+                                    
+                                <?php elseif ($neg['status'] == 'approved'): ?>
+                                    <span class="badge" style="background: #10b981; color: white; padding: 8px 16px;">
+                                        <i class="fas fa-check-double"></i> Listing Approved
+                                    </span>
                                     
                                 <?php elseif ($neg['status'] == 'rejected'): ?>
                                     <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
@@ -772,12 +787,10 @@ $conn->close();
                                     </button>
                                 <?php endif; ?>
                                 
-                                <!-- View Listing - Direct link without redirect issues -->
                                 <a href="/broker_system/user/product.php?id=<?php echo $neg['listing_id']; ?>" target="_blank" class="btn btn-outline">
                                     <i class="fas fa-eye"></i> View Listing
                                 </a>
                                 
-                                <!-- Message Seller - Direct chat link -->
                                 <a href="/broker_system/user/chat.php?user=<?php echo $neg['seller_id']; ?>" target="_blank" class="btn btn-outline">
                                     <i class="fas fa-comment"></i> Message Seller
                                 </a>
@@ -808,14 +821,12 @@ $conn->close();
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Commission (%) <span class="required-star">*</span></label>
+                        <label>Commission (%) <span style="color: red;">*</span></label>
                         <input type="number" name="commission_percent" id="propose_commission" step="0.5" min="1" max="20" required>
-                        <div class="info-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">Recommended: 3-7% based on listing value</div>
                     </div>
                     <div class="form-group">
-                        <label>Deposit Amount (ETB) <span class="required-star">*</span></label>
+                        <label>Deposit Amount (ETB) <span style="color: red;">*</span></label>
                         <input type="number" name="deposit_amount" id="propose_deposit" step="100" min="0" required>
-                        <div class="info-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">Recommended: 25% of listing price (max 50,000 ETB)</div>
                     </div>
                 </div>
                 
@@ -845,11 +856,11 @@ $conn->close();
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Commission (%) <span class="required-star">*</span></label>
+                        <label>Commission (%) <span style="color: red;">*</span></label>
                         <input type="number" name="commission_percent" id="update_commission" step="0.5" min="1" max="20" required>
                     </div>
                     <div class="form-group">
-                        <label>Deposit Amount (ETB) <span class="required-star">*</span></label>
+                        <label>Deposit Amount (ETB) <span style="color: red;">*</span></label>
                         <input type="number" name="deposit_amount" id="update_deposit" step="100" min="0" required>
                     </div>
                 </div>
