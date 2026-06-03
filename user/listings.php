@@ -1,6 +1,6 @@
 <?php
 // user/listings.php - My Listings Page with Full Negotiation Buttons
-// FIXED: Added Pay Commission button for jobs with pending_payment status
+// FIXED: Added Pay Commission button for jobs
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -92,7 +92,7 @@ $status = $_GET['status'] ?? 'all';
 $where = "l.seller_id = $user_id";
 if ($status == 'active') {
     $where .= " AND l.status = 'active' AND l.approval_status = 'approved'";
-} elseif ($status == 'pending') {
+} elseif ($status == 'pending_deposit') {
     $where .= " AND l.approval_status = 'approved' AND l.status = 'pending'";
 } elseif ($status == 'pending_payment') {
     $where .= " AND l.approval_status = 'approved' AND l.status = 'pending_payment'";
@@ -119,17 +119,17 @@ $listings = $conn->query("
 
 // Get counts for tabs
 $counts = [
-    'all' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id")->fetch_assoc()['count'],
-    'active' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND status = 'active' AND approval_status = 'approved'")->fetch_assoc()['count'],
-    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending_payment'")->fetch_assoc()['count'],
-    'pending_deposit' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending'")->fetch_assoc()['count'],
-    'waiting' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'pending'")->fetch_assoc()['count'],
+    'all' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id")->fetch_assoc()['count'] ?? 0,
+    'active' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND status = 'active' AND approval_status = 'approved'")->fetch_assoc()['count'] ?? 0,
+    'pending_payment' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending_payment'")->fetch_assoc()['count'] ?? 0,
+    'pending_deposit' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'approved' AND status = 'pending'")->fetch_assoc()['count'] ?? 0,
+    'waiting' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'pending'")->fetch_assoc()['count'] ?? 0,
     'negotiating' => $conn->query("
         SELECT COUNT(*) as count FROM listing_negotiations ln 
         JOIN listings l ON ln.listing_id = l.id 
         WHERE ln.seller_id = $user_id AND ln.status IN ('commission_proposed', 'counter_offer_sent')
-    ")->fetch_assoc()['count'],
-    'rejected' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'rejected'")->fetch_assoc()['count'],
+    ")->fetch_assoc()['count'] ?? 0,
+    'rejected' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE seller_id = $user_id AND approval_status = 'rejected'")->fetch_assoc()['count'] ?? 0,
 ];
 
 $listings_rows = [];
@@ -147,21 +147,9 @@ $conn->close();
 ?>
 
 <style>
-    .page-header {
-        margin-bottom: 28px;
-    }
-    
-    .page-header h1 {
-        font-size: 28px;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 8px;
-    }
-    
-    .page-header p {
-        color: #64748b;
-        font-size: 14px;
-    }
+    .page-header { margin-bottom: 28px; }
+    .page-header h1 { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    .page-header p { color: #64748b; font-size: 14px; }
     
     .stats-banner {
         background: linear-gradient(135deg, #667eea, #764ba2);
@@ -175,24 +163,9 @@ $conn->close();
         flex-wrap: wrap;
         gap: 16px;
     }
-    
-    .stats-banner h3 {
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: 4px;
-    }
-    
-    .stats-banner p {
-        opacity: 0.9;
-        font-size: 13px;
-    }
-    
-    .stats-banner .badge {
-        background: rgba(255,255,255,0.2);
-        padding: 8px 20px;
-        border-radius: 40px;
-        font-weight: 600;
-    }
+    .stats-banner h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .stats-banner p { opacity: 0.9; font-size: 13px; }
+    .stats-banner .badge { background: rgba(255,255,255,0.2); padding: 8px 20px; border-radius: 40px; font-weight: 600; }
     
     .tabs {
         display: flex;
@@ -202,7 +175,6 @@ $conn->close();
         border-bottom: 1px solid #e2e8f0;
         padding-bottom: 12px;
     }
-    
     .tab {
         padding: 8px 20px;
         background: transparent;
@@ -213,31 +185,15 @@ $conn->close();
         font-weight: 500;
         transition: all 0.3s;
     }
-    
-    .tab:hover {
-        background: #f1f5f9;
-        color: #334155;
-    }
-    
-    .tab.active {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-    }
-    
-    .tab .count {
-        background: rgba(0,0,0,0.1);
-        padding: 2px 6px;
-        border-radius: 20px;
-        margin-left: 6px;
-        font-size: 11px;
-    }
+    .tab:hover { background: #f1f5f9; color: #334155; }
+    .tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+    .tab .count { background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 20px; margin-left: 6px; font-size: 11px; }
     
     .listings-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
         gap: 24px;
     }
-    
     .listing-card {
         background: white;
         border-radius: 20px;
@@ -246,11 +202,7 @@ $conn->close();
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         border: 1px solid #e2e8f0;
     }
-    
-    .listing-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 24px -8px rgba(0,0,0,0.15);
-    }
+    .listing-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px -8px rgba(0,0,0,0.15); }
     
     .card-image {
         height: 180px;
@@ -263,30 +215,11 @@ $conn->close();
         overflow: hidden;
         position: relative;
     }
+    .card-image img { width: 100%; height: 100%; object-fit: cover; }
     
-    .card-image img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    
-    .card-content {
-        padding: 20px;
-    }
-    
-    .listing-title {
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: 8px;
-        color: #0f172a;
-    }
-    
-    .listing-price {
-        font-size: 20px;
-        font-weight: 700;
-        color: #667eea;
-        margin-bottom: 12px;
-    }
+    .card-content { padding: 20px; }
+    .listing-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #0f172a; }
+    .listing-price { font-size: 20px; font-weight: 700; color: #667eea; margin-bottom: 12px; }
     
     .listing-stats {
         display: flex;
@@ -304,7 +237,6 @@ $conn->close();
         font-weight: 500;
         display: inline-block;
     }
-    
     .badge-success { background: #d1fae5; color: #059669; }
     .badge-warning { background: #fed7aa; color: #ea580c; }
     .badge-danger { background: #fee2e2; color: #dc2626; }
@@ -319,7 +251,6 @@ $conn->close();
         margin: 12px 0;
         border: 1px solid #e2e8f0;
     }
-    
     .offer-row {
         display: flex;
         justify-content: space-between;
@@ -328,31 +259,11 @@ $conn->close();
         gap: 12px;
         margin-bottom: 12px;
     }
-    
-    .offer-item {
-        flex: 1;
-        text-align: center;
-    }
-    
-    .offer-label {
-        font-size: 11px;
-        color: #64748b;
-        margin-bottom: 4px;
-    }
-    
-    .offer-value {
-        font-size: 18px;
-        font-weight: 700;
-    }
-    
-    .offer-value.proposed {
-        color: #667eea;
-    }
-    
-    .offer-value.counter {
-        color: #f59e0b;
-    }
-    
+    .offer-item { flex: 1; text-align: center; }
+    .offer-label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+    .offer-value { font-size: 18px; font-weight: 700; }
+    .offer-value.proposed { color: #667eea; }
+    .offer-value.counter { color: #f59e0b; }
     .counter-message {
         background: #fef3c7;
         padding: 10px;
@@ -362,13 +273,7 @@ $conn->close();
         color: #92400e;
     }
     
-    .btn-group {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 12px;
-    }
-    
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
     .btn {
         padding: 8px 16px;
         border-radius: 40px;
@@ -383,57 +288,16 @@ $conn->close();
         cursor: pointer;
         border: none;
     }
-    
-    .btn-primary {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-    }
-    
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-    }
-    
-    .btn-success {
-        background: #10b981;
-        color: white;
-    }
-    
-    .btn-success:hover {
-        background: #059669;
-        transform: translateY(-2px);
-    }
-    
-    .btn-warning {
-        background: #f59e0b;
-        color: white;
-    }
-    
-    .btn-warning:hover {
-        background: #d97706;
-        transform: translateY(-2px);
-    }
-    
-    .btn-danger {
-        background: #ef4444;
-        color: white;
-    }
-    
-    .btn-danger:hover {
-        background: #dc2626;
-        transform: translateY(-2px);
-    }
-    
-    .btn-outline {
-        background: transparent;
-        border: 1px solid #e2e8f0;
-        color: #64748b;
-    }
-    
-    .btn-outline:hover {
-        border-color: #667eea;
-        color: #667eea;
-    }
+    .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+    .btn-success { background: #10b981; color: white; }
+    .btn-success:hover { background: #059669; transform: translateY(-2px); }
+    .btn-warning { background: #f59e0b; color: white; }
+    .btn-warning:hover { background: #d97706; transform: translateY(-2px); }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; transform: translateY(-2px); }
+    .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
+    .btn-outline:hover { border-color: #667eea; color: #667eea; }
     
     .payment-info {
         background: #fef3c7;
@@ -442,7 +306,6 @@ $conn->close();
         margin: 12px 0;
         font-size: 12px;
     }
-    
     .payment-info-pending {
         background: #dbeafe;
         border-left: 4px solid #667eea;
@@ -460,13 +323,11 @@ $conn->close();
         margin: 12px 0;
         font-size: 12px;
     }
-
     .seller-payment-summary .pay-row {
         display: flex;
         justify-content: space-between;
         margin: 4px 0;
     }
-
     .seller-payment-summary .pay-row.remaining {
         font-weight: 700;
         color: #059669;
@@ -474,7 +335,7 @@ $conn->close();
         padding-top: 8px;
         border-top: 1px dashed #bbf7d0;
     }
-
+    
     .badge-fully-paid {
         background: #d1fae5;
         color: #059669;
@@ -485,11 +346,6 @@ $conn->close();
         display: inline-block;
         margin-top: 8px;
     }
-
-    .pay-remaining-btn.loading {
-        opacity: 0.7;
-        pointer-events: none;
-    }
     
     .empty-state {
         text-align: center;
@@ -497,22 +353,8 @@ $conn->close();
         background: white;
         border-radius: 20px;
     }
-    
-    .empty-state i {
-        font-size: 64px;
-        color: #cbd5e1;
-        margin-bottom: 16px;
-    }
-    
-    .empty-state h3 {
-        font-size: 20px;
-        color: #334155;
-        margin-bottom: 8px;
-    }
-    
-    .empty-state p {
-        color: #64748b;
-    }
+    .empty-state i { font-size: 64px; color: #cbd5e1; margin-bottom: 16px; }
+    .empty-state h3 { font-size: 20px; color: #334155; margin-bottom: 8px; }
     
     .modal {
         display: none;
@@ -526,7 +368,6 @@ $conn->close();
         justify-content: center;
         z-index: 1000;
     }
-    
     .modal-content {
         background: white;
         border-radius: 24px;
@@ -535,113 +376,37 @@ $conn->close();
         max-width: 90%;
         animation: modalIn 0.3s ease;
     }
-    
     @keyframes modalIn {
         from { opacity: 0; transform: scale(0.9); }
         to { opacity: 1; transform: scale(1); }
     }
-    
     .modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 20px;
     }
+    .modal-header h3 { font-size: 20px; font-weight: 600; color: #0f172a; }
+    .close-modal { cursor: pointer; font-size: 28px; color: #94a3b8; transition: color 0.3s; }
+    .close-modal:hover { color: #ef4444; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #334155; font-size: 13px; }
+    .form-group input, .form-group textarea { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 14px; font-family: inherit; }
+    .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #667eea; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     
-    .modal-header h3 {
-        font-size: 20px;
-        font-weight: 600;
-        color: #0f172a;
-    }
-    
-    .close-modal {
-        cursor: pointer;
-        font-size: 28px;
-        color: #94a3b8;
-        transition: color 0.3s;
-    }
-    
-    .close-modal:hover {
-        color: #ef4444;
-    }
-    
-    .form-group {
-        margin-bottom: 20px;
-    }
-    
-    .form-group label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 600;
-        color: #334155;
-        font-size: 13px;
-    }
-    
-    .form-group input, .form-group textarea {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        font-size: 14px;
-        font-family: inherit;
-    }
-    
-    .form-group input:focus, .form-group textarea:focus {
-        outline: none;
-        border-color: #667eea;
-    }
-    
-    .form-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-    }
-    
-    .alert {
-        padding: 12px 16px;
-        border-radius: 12px;
-        margin-bottom: 20px;
-    }
-    
-    .alert-success {
-        background: #d1fae5;
-        color: #059669;
-        border-left: 4px solid #059669;
-    }
-    
-    .alert-error {
-        background: #fee2e2;
-        color: #dc2626;
-        border-left: 4px solid #dc2626;
-    }
-    
-    .info-text {
-        font-size: 11px;
-        color: #64748b;
-        margin-top: 6px;
-    }
+    .alert { padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; }
+    .alert-success { background: #d1fae5; color: #059669; border-left: 4px solid #059669; }
+    .alert-error { background: #fee2e2; color: #dc2626; border-left: 4px solid #dc2626; }
+    .info-text { font-size: 11px; color: #64748b; margin-top: 6px; }
     
     @media (max-width: 768px) {
-        .listings-grid {
-            grid-template-columns: 1fr;
-        }
-        .tabs {
-            overflow-x: auto;
-            flex-wrap: nowrap;
-        }
-        .offer-row {
-            flex-direction: column;
-            text-align: center;
-        }
-        .btn-group {
-            flex-direction: column;
-        }
-        .btn {
-            justify-content: center;
-        }
-        .form-row {
-            grid-template-columns: 1fr;
-        }
+        .listings-grid { grid-template-columns: 1fr; }
+        .tabs { overflow-x: auto; flex-wrap: nowrap; }
+        .offer-row { flex-direction: column; text-align: center; }
+        .btn-group { flex-direction: column; }
+        .btn { justify-content: center; }
+        .form-row { grid-template-columns: 1fr; }
     }
 </style>
 
@@ -669,7 +434,7 @@ $conn->close();
     <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div>
 <?php endif; ?>
 
-<!-- Tabs - Updated with pending_payment -->
+<!-- Tabs -->
 <div class="tabs">
     <a href="?status=all" class="tab <?php echo $status == 'all' ? 'active' : ''; ?>">
         All <span class="count"><?php echo $counts['all']; ?></span>
@@ -677,11 +442,11 @@ $conn->close();
     <a href="?status=active" class="tab <?php echo $status == 'active' ? 'active' : ''; ?>">
         Active <span class="count"><?php echo $counts['active']; ?></span>
     </a>
-    <a href="?status=pending_deposit" class="tab <?php echo $status == 'pending_deposit' ? 'active' : ''; ?>">
-        Need Deposit <span class="count"><?php echo $counts['pending_deposit']; ?></span>
-    </a>
     <a href="?status=pending_payment" class="tab <?php echo $status == 'pending_payment' ? 'active' : ''; ?>">
         Need Commission <span class="count"><?php echo $counts['pending_payment']; ?></span>
+    </a>
+    <a href="?status=pending_deposit" class="tab <?php echo $status == 'pending_deposit' ? 'active' : ''; ?>">
+        Need Deposit <span class="count"><?php echo $counts['pending_deposit']; ?></span>
     </a>
     <a href="?status=negotiating" class="tab <?php echo $status == 'negotiating' ? 'active' : ''; ?>">
         🤝 Negotiating <span class="count"><?php echo $counts['negotiating']; ?></span>
@@ -861,7 +626,6 @@ $conn->close();
                     ?>
                     <div class="seller-payment-summary" id="payment-summary-<?php echo $listing['id']; ?>">
                         <?php if ($is_job_card): ?>
-                            <!-- JOB LISTING - No Pay Remaining Balance button -->
                             <strong><i class="fas fa-chart-pie"></i> Payment Summary</strong>
                             <div class="pay-row">
                                 <span>💰 Monthly Salary</span>
@@ -879,7 +643,6 @@ $conn->close();
                                 <i class="fas fa-info-circle"></i> Applicants pay the service fee. You receive the full salary after job completion.
                             </div>
                         <?php else: ?>
-                            <!-- PRODUCT/RENTAL LISTING - Show Pay Remaining Balance if applicable -->
                             <strong><i class="fas fa-chart-pie"></i> Your Payment Status</strong>
                             <div class="pay-row">
                                 <span>Total Price</span>
@@ -907,7 +670,7 @@ $conn->close();
                     </div>
                     <?php endif; ?>
 
-                    <!-- Regular Action Buttons (for non-negotiation listings) -->
+                    <!-- Regular Action Buttons -->
                     <?php if (!$has_negotiation && !($listing['approval_status'] == 'approved' && in_array($listing['status'], ['pending', 'pending_payment']))): ?>
                         <div class="btn-group">
                             <a href="product.php?id=<?php echo $listing['id']; ?>" class="btn btn-outline" style="flex: 1;">

@@ -115,6 +115,23 @@ if ($data['is_paid'] && !$data['listing_active']) {
     }
 }
 
+
+    if ($data['is_paid'] && $data['payment_code_type'] == 'commission') {
+    // Get the transaction details
+    $txn_info = $conn->query("
+        SELECT t.listing_id FROM transactions t
+        WHERE t.id = {$data['transaction_id']}
+    ")->fetch_assoc();
+    
+    if ($txn_info) {
+        // Activate the job listing
+        $conn->query("UPDATE listings SET status = 'active' WHERE id = {$txn_info['listing_id']}");
+        $conn->query("UPDATE transactions SET status = 'completed' WHERE id = {$data['transaction_id']}");
+        $response['job_activated'] = true;
+    }}
+
+
+
 $conn->close();
 echo json_encode($response);
 ?>
