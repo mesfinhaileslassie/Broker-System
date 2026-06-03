@@ -1,5 +1,5 @@
 <?php
-// user/browse.php - Only shows AVAILABLE listings (no reserved, no sold, no purchased)
+// user/browse.php - Shows ONLY active listings (jobs with commission paid, available products/rentals)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -41,45 +41,15 @@ $limit = 12;
 $offset = ($page - 1) * $limit;
 
 // ============================================
-// CRITICAL: Only show listings with NO confirmed payments
+// SHOW ONLY ACTIVE LISTINGS
 // ============================================
+$where_conditions = [
+    "l.status = 'active'",
+    "l.approval_status = 'approved'"
+];
 
-// First, get all listing IDs that have confirmed payments
-$confirmed_listings_query = $conn->query("
-    SELECT DISTINCT t.listing_id 
-    FROM transactions t
-    JOIN payments p ON t.id = p.transaction_id 
-    WHERE p.status = 'confirmed' 
-    AND p.type IN ('deposit_buyer', 'service_fee', 'remaining_balance')
-");
-
-$excluded_listing_ids = [];
-if ($confirmed_listings_query && $confirmed_listings_query->num_rows > 0) {
-    while ($row = $confirmed_listings_query->fetch_assoc()) {
-        $excluded_listing_ids[] = $row['listing_id'];
-    }
-}
-
-// Build the exclusion condition
-$exclude_condition = "";
-if (!empty($excluded_listing_ids)) {
-    $exclude_condition = " AND l.id NOT IN (" . implode(',', $excluded_listing_ids) . ") ";
-}
-
-// Build WHERE conditions array
-$where_conditions = [];
 $params = [];
 $types_param = "";
-
-// Base conditions
-$where_conditions[] = "l.status = 'active'";
-$where_conditions[] = "l.approval_status = 'approved'";
-$where_conditions[] = "(l.availability_status = 'available' OR l.availability_status IS NULL)";
-
-// Add exclusion condition if there are excluded IDs
-if (!empty($exclude_condition)) {
-    $where_conditions[] = "l.id NOT IN (" . implode(',', $excluded_listing_ids) . ")";
-}
 
 // Type filter
 if ($type) {
@@ -118,7 +88,6 @@ if ($location) {
     $types_param .= "s";
 }
 
-// Build WHERE clause
 $whereClause = "WHERE " . implode(" AND ", $where_conditions);
 
 // Sorting
@@ -155,7 +124,7 @@ if ($params && !empty($types_param)) {
 $stmt->execute();
 $listings = $stmt->get_result();
 
-// Get total count with same conditions
+// Get total count
 $countSql = "SELECT COUNT(*) as total FROM listings l JOIN users u ON l.seller_id = u.id $whereClause";
 $countStmt = $conn->prepare($countSql);
 $countParams = array_slice($params, 0, -2);
@@ -285,7 +254,7 @@ $conn->close();
 
 <!-- Result Count -->
 <div class="result-count">
-    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> available listing(s)
+    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> active listing(s)
 </div>
 
 <!-- Listings Grid -->
@@ -330,7 +299,7 @@ $conn->close();
                         <?php if ($item['type'] == 'rental'): ?>🏡 For Rent
                         <?php elseif ($item['type'] == 'product'): ?>🚗 For Sale
                         <?php else: ?>💼 Job Opportunity<?php endif; ?>
-                        <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Available</span>
+                        <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Active</span>
                     </span>
                     <div class="card-title"><?php echo htmlspecialchars(substr($item['title'], 0, 50)); ?></div>
                     <div class="card-price"><?php echo formatMoney($item['price']); ?>
@@ -395,7 +364,7 @@ $conn->close();
 <?php else: ?>
     <div class="empty-state">
         <i class="fas fa-search"></i>
-        <h3>No available listings found</h3>
+        <h3>No active listings found</h3>
         <p>Try adjusting your search or filter criteria, or check back later for new listings.</p>
         <a href="post_listing.php" class="btn" style="display: inline-block; margin-top: 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 12px 28px; border-radius: 40px; text-decoration: none;">
             <i class="fas fa-plus-circle"></i> Post a Listing

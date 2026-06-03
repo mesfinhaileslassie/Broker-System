@@ -1,6 +1,6 @@
 <?php
 // api/confirm_payment.php - Confirm payment by code (all payment types)
-// FIXED: Now marks products as reserved/sold when deposit is paid
+// FIXED: Now handles commission payments for job activation
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -64,10 +64,10 @@ if (isset($_SESSION['user_logged_in']) && $_SESSION['user_logged_in']) {
 $result = confirmPaymentByCode($conn, $code, ['user_id' => $user_id]);
 
 // ============================================
-// CRITICAL FIX: Mark product as reserved/sold after deposit payment
+// CRITICAL FIX: Handle commission payment for job activation
 // ============================================
 if ($result['success']) {
-    debug_log_confirm("Payment confirmed successfully. Checking if product needs to be marked as reserved...");
+    debug_log_confirm("Payment confirmed successfully. Checking payment type...");
     
     // Get payment and transaction details
     $payment_info = $conn->query("
@@ -77,11 +77,12 @@ if ($result['success']) {
             t.listing_id,
             t.buyer_id,
             t.seller_id,
-            t.type as transaction_type,
+            t.status as transaction_status,
             l.type as listing_type,
             l.availability_status,
             l.sold_to_user_id,
-            l.status as listing_status
+            l.status as listing_status,
+            l.title
         FROM payments p
         JOIN transactions t ON p.transaction_id = t.id
         JOIN listings l ON t.listing_id = l.id
@@ -101,13 +102,54 @@ if ($result['success']) {
         $listing_type = $payment['listing_type'];
         $current_availability = $payment['availability_status'];
         
-        debug_log_confirm("Listing ID: $listing_id, Type: $listing_type, Current availability: $current_availability");
-        debug_log_confirm("Payment type: $payment_type, Buyer ID: $buyer_id");
+        debug_log_confirm("Listing ID: $listing_id, Type: $listing_type, Payment Type: $payment_type");
+        
+        // ============================================
+        // FOR COMMISSION PAYMENTS (Job Activation)
+        // ============================================
+        if ($payment_type === 'commission' && $listing_type === 'job') {
+            debug_log_confirm("Processing COMMISSION payment for job activation");
+            
+            // Activate the job listing
+            $update_job = $conn->query("
+                UPDATE listings 
+                SET status = 'active',
+                    approval_status = 'approved',
+                    updated_at = NOW()
+                WHERE id = $listing_id 
+                AND type = 'job'
+            ");
+            
+            if ($update_job && $conn->affected_rows > 0) {
+                debug_log_confirm("✅ JOB ACTIVATED! Listing ID: $listing_id");
+                
+                // Update transaction status
+                $conn->query("
+                    UPDATE transactions 
+                    SET status = 'completed',
+                        updated_at = NOW()
+                    WHERE id = {$payment['transaction_id']}
+                ");
+                
+                // Send notification to employer
+                $conn->query("
+                    INSERT INTO notifications (user_id, title, message, link, created_at) 
+                    VALUES ({$payment['seller_id']}, '✅ Job Activated', 
+                    'Your job listing \"{$payment['title']}\" has been activated! It is now visible to applicants.', 
+                    '/broker_system/user/listings.php', NOW())
+                ");
+                
+                $result['job_activated'] = true;
+                $result['message'] = 'Job activated successfully! Your listing is now visible to applicants.';
+            } else {
+                debug_log_confirm("⚠️ Failed to activate job. Affected rows: " . $conn->affected_rows);
+            }
+        }
         
         // ============================================
         // FOR PRODUCT LISTINGS: Mark as reserved when buyer pays deposit
         // ============================================
-        if ($listing_type === 'product' && $payment_type === 'deposit_buyer') {
+        elseif ($listing_type === 'product' && $payment_type === 'deposit_buyer') {
             debug_log_confirm("Processing PRODUCT deposit payment - marking as reserved");
             
             // Only mark as reserved if currently available
@@ -125,7 +167,7 @@ if ($result['success']) {
                 $update_listing->execute();
                 
                 if ($conn->affected_rows > 0) {
-                    debug_log_confirm("✅ PRODUCT MARKED AS RESERVED! Listing ID: $listing_id, Buyer ID: $buyer_id");
+                    debug_log_confirm("✅ PRODUCT MARKED AS RESERVED! Listing ID: $listing_id");
                     
                     // Also update the transaction to track reservation
                     $conn->query("
@@ -140,22 +182,17 @@ if ($result['success']) {
                     $result['listing_id'] = $listing_id;
                     $result['message'] = ($result['message'] ?? 'Payment confirmed') . ' The item has been reserved for you.';
                 } else {
-                    debug_log_confirm("⚠️ Failed to mark product as reserved - no rows affected. Current availability: $current_availability");
-                    $result['warning'] = 'Payment confirmed but the item may already be reserved by another buyer.';
+                    debug_log_confirm("⚠️ Failed to mark product as reserved - no rows affected");
                 }
-            } else {
-                debug_log_confirm("⚠️ Product not marked as reserved - current availability is '$current_availability' (not 'available')");
-                $result['warning'] = 'Payment confirmed but this item is no longer available for reservation.';
             }
         }
         
         // ============================================
-        // FOR RENTAL LISTINGS: Ensure dates are blocked (handled by AvailabilityManager)
+        // FOR RENTAL LISTINGS: Mark as reserved
         // ============================================
         elseif ($listing_type === 'rental' && $payment_type === 'deposit_buyer') {
-            debug_log_confirm("Processing RENTAL deposit payment - checking availability manager");
+            debug_log_confirm("Processing RENTAL deposit payment - marking as reserved");
             
-            // Update listing availability status to 'reserved' for rentals too
             if ($current_availability === 'available' || $current_availability === null) {
                 $update_listing = $conn->prepare("
                     UPDATE listings 
@@ -172,30 +209,30 @@ if ($result['success']) {
         }
         
         // ============================================
-        // FOR JOB LISTINGS: Mark position as filled
+        // FOR SERVICE FEE (Job Application)
         // ============================================
-        elseif ($listing_type === 'job' && $payment_type === 'deposit_buyer') {
-            debug_log_confirm("Processing JOB deposit payment - checking if position should be marked as filled");
+        elseif ($payment_type === 'service_fee' && $listing_type === 'job') {
+            debug_log_confirm("Processing SERVICE FEE payment for job application");
             
-            // Check if this job should be marked as filled (based on application acceptance)
-            $job_check = $conn->query("
-                SELECT ja.status 
-                FROM job_applications ja
-                WHERE ja.job_id = $listing_id AND ja.applicant_id = $buyer_id AND ja.status = 'hired'
+            // Update transaction to application_submitted
+            $conn->query("
+                UPDATE transactions 
+                SET status = 'application_submitted',
+                    payment_status = 'service_fee_paid',
+                    updated_at = NOW()
+                WHERE id = {$payment['transaction_id']}
             ");
             
-            if ($job_check && $job_check->num_rows > 0) {
-                $update_listing = $conn->prepare("
-                    UPDATE listings 
-                    SET availability_status = 'filled',
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $update_listing->bind_param("i", $listing_id);
-                $update_listing->execute();
-                debug_log_confirm("✅ Job marked as filled: $listing_id");
-                $result['listing_filled'] = true;
-            }
+            // Notify employer about new application
+            $conn->query("
+                INSERT INTO notifications (user_id, title, message, link, created_at) 
+                VALUES ({$payment['seller_id']}, '📝 New Job Application', 
+                'A candidate has applied for your job listing and paid the service fee.', 
+                '/broker_system/user/transaction.php?id={$payment['transaction_id']}', NOW())
+            ");
+            
+            $result['application_submitted'] = true;
+            $result['message'] = 'Application submitted successfully!';
         }
     } else {
         debug_log_confirm("WARNING: Could not find payment details for code: $code");
@@ -206,3 +243,4 @@ if ($result['success']) {
 
 $conn->close();
 echo json_encode($result);
+?>
