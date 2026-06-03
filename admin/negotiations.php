@@ -1,14 +1,15 @@
 <?php
 // admin/negotiations.php - Complete Negotiations Management System
+// FIXED: No session conflicts, proper proposal workflow
 
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Check admin login - Use admin session
+// Check admin login - Direct check without including auth.php
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: /broker_system/auth/login.php');
+    header('Location: /broker_system/admin/login.php');
     exit;
 }
 
@@ -25,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $negotiation_id = intval($_POST['negotiation_id'] ?? 0);
     $action = $_POST['action'] ?? '';
     
-    if ($action === 'propose_terms') {
+    if ($action === 'send_proposal') {
         $commission = floatval($_POST['commission_percent'] ?? 0);
         $deposit = floatval($_POST['deposit_amount'] ?? 0);
         $admin_notes = $conn->real_escape_string($_POST['admin_notes'] ?? '');
@@ -38,76 +39,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SET proposed_commission = $commission,
                     proposed_deposit = $deposit,
                     admin_notes = '$admin_notes',
-                    status = 'commission_proposed',
+                    status = 'proposal_sent',
+                    sent_at = NOW(),
                     updated_at = NOW()
                 WHERE id = $negotiation_id
             ");
             
             $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
-            $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
+            $listing = $conn->query("SELECT title, type FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
+            
+            $user_type = ($listing['type'] == 'job') ? 'Employer' : 'Seller';
             
             $conn->query("
                 INSERT INTO notifications (user_id, title, message, link, created_at) 
-                VALUES ({$neg['seller_id']}, '📋 Commission Proposal', 
-                'Admin has proposed {$commission}% commission and " . formatMoney($deposit) . " deposit for your listing \"{$listing['title']}\". Please login to accept or counter.', 
+                VALUES ({$neg['seller_id']}, '📋 New Commission Proposal', 
+                'A new proposal has been sent for your listing \"{$listing['title']}\". Proposed commission: {$commission}% and deposit: " . formatMoney($deposit) . ". Please login to review.', 
                 '/broker_system/user/negotiations.php', NOW())
             ");
             
-            $message = "Proposal sent to seller successfully!";
+            $message = "Proposal sent to $user_type successfully!";
         }
-        
-    } elseif ($action === 'accept_counter') {
-        $conn->query("
-            UPDATE listing_negotiations 
-            SET proposed_commission = counter_commission,
-                proposed_deposit = counter_deposit,
-                counter_commission = NULL,
-                counter_deposit = NULL,
-                counter_message = NULL,
-                status = 'agreement_accepted',
-                accepted_at = NOW(),
-                updated_at = NOW()
-            WHERE id = $negotiation_id
-        ");
-        
-        $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
-        $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
-        
-        $conn->query("
-            UPDATE listings SET approval_status = 'approved' WHERE id = {$neg['listing_id']}
-        ");
-        
-        $conn->query("
-            INSERT INTO notifications (user_id, title, message, link, created_at) 
-            VALUES ({$neg['seller_id']}, '✅ Counter Offer Accepted', 
-            'Your counter offer for \"{$listing['title']}\" has been accepted! Please pay the deposit to publish your listing.', 
-            '/broker_system/user/listings.php', NOW())
-        ");
-        
-        $message = "Counter offer accepted! Waiting for seller payment.";
-        
-    } elseif ($action === 'reject_counter') {
-        $conn->query("
-            UPDATE listing_negotiations 
-            SET counter_commission = NULL,
-                counter_deposit = NULL,
-                counter_message = NULL,
-                status = 'commission_proposed',
-                updated_at = NOW()
-            WHERE id = $negotiation_id
-        ");
-        
-        $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
-        $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
-        
-        $conn->query("
-            INSERT INTO notifications (user_id, title, message, link, created_at) 
-            VALUES ({$neg['seller_id']}, '❌ Counter Offer Rejected', 
-            'Your counter offer for \"{$listing['title']}\" has been rejected. Original proposal remains active.', 
-            '/broker_system/user/negotiations.php', NOW())
-        ");
-        
-        $message = "Counter offer rejected. Original proposal remains active.";
         
     } elseif ($action === 'update_proposal') {
         $commission = floatval($_POST['commission_percent'] ?? 0);
@@ -122,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SET proposed_commission = $commission,
                     proposed_deposit = $deposit,
                     admin_notes = '$admin_notes',
-                    status = 'commission_proposed',
+                    status = 'proposal_sent',
                     updated_at = NOW()
                 WHERE id = $negotiation_id
             ");
@@ -133,11 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->query("
                 INSERT INTO notifications (user_id, title, message, link, created_at) 
                 VALUES ({$neg['seller_id']}, '📋 Updated Proposal', 
-                'Admin has updated the proposal for \"{$listing['title']}\" to {$commission}% commission and " . formatMoney($deposit) . " deposit.', 
+                'The commission proposal for \"{$listing['title']}\" has been updated to {$commission}% commission and " . formatMoney($deposit) . " deposit. Please review.', 
                 '/broker_system/user/negotiations.php', NOW())
             ");
             
-            $message = "Proposal updated successfully!";
+            $message = "Proposal updated and sent successfully!";
         }
     }
 }
@@ -149,13 +100,13 @@ $search = isset($_GET['search']) ? $conn->real_escape_string(trim($_GET['search'
 // Build query
 $where = "1=1";
 if ($filter === 'pending') {
-    $where = "ln.status IN ('under_review', 'commission_proposed')";
-} elseif ($filter === 'counter') {
-    $where = "ln.status = 'counter_offer_sent'";
+    $where = "ln.status = 'under_review'";
+} elseif ($filter === 'proposal_sent') {
+    $where = "ln.status = 'proposal_sent'";
 } elseif ($filter === 'accepted') {
-    $where = "ln.status = 'agreement_accepted'";
-} elseif ($filter === 'published') {
-    $where = "ln.status = 'published'";
+    $where = "ln.status = 'accepted'";
+} elseif ($filter === 'rejected') {
+    $where = "ln.status = 'rejected'";
 }
 
 if ($search) {
@@ -173,10 +124,9 @@ $negotiations = $conn->query("
     WHERE $where
     ORDER BY 
         CASE 
-            WHEN ln.status = 'counter_offer_sent' THEN 1
-            WHEN ln.status = 'commission_proposed' THEN 2
-            WHEN ln.status = 'under_review' THEN 3
-            ELSE 4
+            WHEN ln.status = 'proposal_sent' THEN 1
+            WHEN ln.status = 'under_review' THEN 2
+            ELSE 3
         END,
         ln.created_at DESC
 ");
@@ -184,10 +134,10 @@ $negotiations = $conn->query("
 // Get statistics
 $stats = [
     'total' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations")->fetch_assoc()['count'] ?? 0,
-    'pending' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status IN ('under_review', 'commission_proposed')")->fetch_assoc()['count'] ?? 0,
-    'counter' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'counter_offer_sent'")->fetch_assoc()['count'] ?? 0,
-    'accepted' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'agreement_accepted'")->fetch_assoc()['count'] ?? 0,
-    'published' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'published'")->fetch_assoc()['count'] ?? 0,
+    'pending' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'under_review'")->fetch_assoc()['count'] ?? 0,
+    'proposal_sent' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'proposal_sent'")->fetch_assoc()['count'] ?? 0,
+    'accepted' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'accepted'")->fetch_assoc()['count'] ?? 0,
+    'rejected' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status = 'rejected'")->fetch_assoc()['count'] ?? 0,
 ];
 
 $conn->close();
@@ -399,10 +349,9 @@ $conn->close();
             font-weight: 600;
         }
         .badge-under_review { background: #fef3c7; color: #92400e; }
-        .badge-commission_proposed { background: #dbeafe; color: #1e40af; }
-        .badge-counter_offer_sent { background: #fef3c7; color: #ea580c; }
-        .badge-agreement_accepted { background: #d1fae5; color: #059669; }
-        .badge-published { background: #d1fae5; color: #059669; }
+        .badge-proposal_sent { background: #dbeafe; color: #1e40af; }
+        .badge-accepted { background: #d1fae5; color: #059669; }
+        .badge-rejected { background: #fee2e2; color: #dc2626; }
         
         .seller-info {
             display: flex;
@@ -446,16 +395,6 @@ $conn->close();
         .offer-label { font-size: 0.7rem; font-weight: 500; color: #64748b; text-transform: uppercase; }
         .offer-value { font-size: 1.1rem; font-weight: 700; }
         .offer-value.proposed { color: #667eea; }
-        .offer-value.counter { color: #f59e0b; }
-        
-        .counter-message {
-            background: #fef3c7;
-            border-radius: 12px;
-            padding: 0.75rem 1rem;
-            font-size: 0.8rem;
-            margin-top: 1rem;
-            border-left: 3px solid #f59e0b;
-        }
         
         .action-buttons {
             padding: 1rem 1.5rem;
@@ -463,6 +402,7 @@ $conn->close();
             display: flex;
             gap: 0.75rem;
             flex-wrap: wrap;
+            border-top: 1px solid #e2e8f0;
         }
         .btn {
             padding: 0.5rem 1.25rem;
@@ -483,8 +423,6 @@ $conn->close();
         .btn-success:hover { transform: translateY(-2px); }
         .btn-danger { background: #ef4444; color: white; }
         .btn-danger:hover { transform: translateY(-2px); }
-        .btn-warning { background: #f59e0b; color: white; }
-        .btn-warning:hover { transform: translateY(-2px); }
         .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
         .btn-outline:hover { border-color: #667eea; color: #667eea; transform: translateY(-2px); }
 
@@ -615,8 +553,8 @@ $conn->close();
             </a>
             <a href="negotiations.php" class="menu-item active">
                 <i class="fas fa-handshake"></i> Negotiations
-                <?php if (($stats['pending'] + $stats['counter']) > 0): ?>
-                    <span class="badge-count"><?php echo $stats['pending'] + $stats['counter']; ?></span>
+                <?php if (($stats['pending'] + $stats['proposal_sent']) > 0): ?>
+                    <span class="badge-count"><?php echo $stats['pending'] + $stats['proposal_sent']; ?></span>
                 <?php endif; ?>
             </a>
             <a href="disputes.php" class="menu-item">
@@ -635,7 +573,7 @@ $conn->close();
                     <div class="profile-email">Administrator</div>
                 </div>
             </div>
-            <a href="../auth/logout.php" class="menu-item" style="margin-top: 15px;">
+            <a href="../admin/login.php" class="menu-item" style="margin-top: 15px;">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
         </div>
@@ -650,7 +588,7 @@ $conn->close();
                     <i class="fas fa-user-shield"></i>
                     <span>Super Admin</span>
                 </div>
-                <a href="../auth/logout.php" class="logout-btn">
+                <a href="../admin/login.php" class="logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Exit
                 </a>
             </div>
@@ -662,7 +600,7 @@ $conn->close();
             <div class="welcome-banner">
                 <div class="welcome-content">
                     <h1>Commission Negotiations</h1>
-                    <p>Manage and respond to seller commission negotiations</p>
+                    <p>Set commission and deposit amounts for listings. Sellers will review and accept proposals.</p>
                 </div>
             </div>
 
@@ -686,19 +624,19 @@ $conn->close();
                     <div class="stat-label">Pending Review</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-exchange-alt"></i></div>
-                    <div class="stat-value"><?php echo $stats['counter']; ?></div>
-                    <div class="stat-label">Counter Offers</div>
+                    <div class="stat-icon"><i class="fas fa-paper-plane"></i></div>
+                    <div class="stat-value"><?php echo $stats['proposal_sent']; ?></div>
+                    <div class="stat-label">Proposal Sent</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
                     <div class="stat-value"><?php echo $stats['accepted']; ?></div>
-                    <div class="stat-label">Agreement Accepted</div>
+                    <div class="stat-label">Accepted</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-globe"></i></div>
-                    <div class="stat-value"><?php echo $stats['published']; ?></div>
-                    <div class="stat-label">Published</div>
+                    <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
+                    <div class="stat-value"><?php echo $stats['rejected']; ?></div>
+                    <div class="stat-label">Rejected</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-icon"><i class="fas fa-chart-simple"></i></div>
@@ -719,9 +657,9 @@ $conn->close();
                 <div class="filter-tabs">
                     <a href="?filter=all&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'all' ? 'active' : ''; ?>">All</a>
                     <a href="?filter=pending&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'pending' ? 'active' : ''; ?>">Pending Review</a>
-                    <a href="?filter=counter&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'counter' ? 'active' : ''; ?>">Counter Offers</a>
+                    <a href="?filter=proposal_sent&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'proposal_sent' ? 'active' : ''; ?>">Proposal Sent</a>
                     <a href="?filter=accepted&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'accepted' ? 'active' : ''; ?>">Accepted</a>
-                    <a href="?filter=published&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'published' ? 'active' : ''; ?>">Published</a>
+                    <a href="?filter=rejected&search=<?php echo urlencode($search); ?>" class="filter-tab <?php echo $filter == 'rejected' ? 'active' : ''; ?>">Rejected</a>
                 </div>
             </div>
 
@@ -731,43 +669,53 @@ $conn->close();
                     <?php while($neg = $negotiations->fetch_assoc()): 
                         $status_class = '';
                         $status_text = '';
+                        $status_icon = '';
                         switch($neg['status']) {
                             case 'under_review':
                                 $status_class = 'badge-under_review';
-                                $status_text = 'Under Review';
+                                $status_text = 'Pending Review';
+                                $status_icon = 'fa-clock';
                                 break;
-                            case 'commission_proposed':
-                                $status_class = 'badge-commission_proposed';
-                                $status_text = 'Proposal Sent';
+                            case 'proposal_sent':
+                                $status_class = 'badge-proposal_sent';
+                                $status_text = 'Proposal Sent - Awaiting Seller Response';
+                                $status_icon = 'fa-paper-plane';
                                 break;
-                            case 'counter_offer_sent':
-                                $status_class = 'badge-counter_offer_sent';
-                                $status_text = 'Counter Offer Received';
+                            case 'accepted':
+                                $status_class = 'badge-accepted';
+                                $status_text = 'Accepted';
+                                $status_icon = 'fa-check-circle';
                                 break;
-                            case 'agreement_accepted':
-                                $status_class = 'badge-agreement_accepted';
-                                $status_text = 'Agreement Accepted';
-                                break;
-                            case 'published':
-                                $status_class = 'badge-published';
-                                $status_text = 'Published';
+                            case 'rejected':
+                                $status_class = 'badge-rejected';
+                                $status_text = 'Rejected';
+                                $status_icon = 'fa-times-circle';
                                 break;
                             default:
                                 $status_class = 'badge-under_review';
                                 $status_text = ucfirst(str_replace('_', ' ', $neg['status']));
+                                $status_icon = 'fa-clock';
                         }
                         
                         $type_icon = '';
-                        if ($neg['type'] == 'rental') $type_icon = '🏠';
-                        elseif ($neg['type'] == 'product') $type_icon = '🚗';
-                        else $type_icon = '💼';
+                        $type_label = '';
+                        if ($neg['type'] == 'rental') {
+                            $type_icon = '🏠';
+                            $type_label = 'Rental';
+                        } elseif ($neg['type'] == 'product') {
+                            $type_icon = '🚗';
+                            $type_label = 'Product';
+                        } else {
+                            $type_icon = '💼';
+                            $type_label = 'Job';
+                        }
                     ?>
                         <div class="negotiation-card">
                             <div class="card-header">
                                 <div class="listing-info">
                                     <h3><?php echo $type_icon; ?> <?php echo htmlspecialchars($neg['title']); ?></h3>
                                     <div class="listing-meta">
-                                        <span><i class="fas fa-tag"></i> <?php echo ucfirst($neg['type']); ?></span>
+                                        <span><i class="fas fa-tag"></i> <?php echo $type_label; ?></span>
                                         <span><i class="fas fa-calendar"></i> <?php echo date('M d, Y', strtotime($neg['created_at'])); ?></span>
                                     </div>
                                 </div>
@@ -781,7 +729,7 @@ $conn->close();
                                     <div class="seller-email"><?php echo htmlspecialchars($neg['seller_email']); ?></div>
                                 </div>
                                 <span class="badge <?php echo $status_class; ?>" style="margin-left: auto;">
-                                    <i class="fas <?php echo $neg['status'] == 'counter_offer_sent' ? 'fa-exchange-alt' : 'fa-clock'; ?>"></i> <?php echo $status_text; ?>
+                                    <i class="fas <?php echo $status_icon; ?>"></i> <?php echo $status_text; ?>
                                 </span>
                             </div>
                             
@@ -795,22 +743,10 @@ $conn->close();
                                         <span class="offer-label">Proposed Deposit</span>
                                         <span class="offer-value proposed"><?php echo $neg['proposed_deposit'] ? formatMoney($neg['proposed_deposit']) : 'Not set'; ?></span>
                                     </div>
-                                    <?php if ($neg['counter_commission']): ?>
-                                    <div class="offer-item">
-                                        <span class="offer-label">Seller Counter Offer</span>
-                                        <span class="offer-value counter"><?php echo $neg['counter_commission']; ?>% / <?php echo formatMoney($neg['counter_deposit']); ?></span>
-                                    </div>
-                                    <?php endif; ?>
                                 </div>
-                                
-                                <?php if ($neg['counter_message']): ?>
-                                <div class="counter-message">
-                                    <i class="fas fa-comment-dots"></i> <strong>Seller's Note:</strong> <?php echo htmlspecialchars($neg['counter_message']); ?>
-                                </div>
-                                <?php endif; ?>
                                 
                                 <?php if ($neg['admin_notes']): ?>
-                                <div class="counter-message" style="background: #dbeafe; border-left-color: #667eea; margin-top: 8px;">
+                                <div class="counter-message" style="background: #dbeafe; border-left-color: #667eea; margin-top: 8px; padding: 8px 12px; border-radius: 8px;">
                                     <i class="fas fa-sticky-note"></i> <strong>Admin Note:</strong> <?php echo htmlspecialchars($neg['admin_notes']); ?>
                                 </div>
                                 <?php endif; ?>
@@ -818,44 +754,30 @@ $conn->close();
                             
                             <div class="action-buttons">
                                 <?php if ($neg['status'] == 'under_review'): ?>
-                                    <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission'] ?: 5; ?>, <?php echo $neg['proposed_deposit'] ?: ($neg['price'] * 0.3); ?>)" class="btn btn-primary">
-                                        <i class="fas fa-percent"></i> Propose Terms
+                                    <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission'] ?: 5; ?>, <?php echo $neg['proposed_deposit'] ?: ($neg['price'] * 0.25); ?>)" class="btn btn-primary">
+                                        <i class="fas fa-percent"></i> Send Proposal
                                     </button>
-                                <?php elseif ($neg['status'] == 'commission_proposed'): ?>
+                                    
+                                <?php elseif ($neg['status'] == 'proposal_sent'): ?>
                                     <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
                                         <i class="fas fa-edit"></i> Update Proposal
                                     </button>
-                                <?php elseif ($neg['status'] == 'counter_offer_sent'): ?>
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
-                                        <input type="hidden" name="action" value="accept_counter">
-                                        <button type="submit" class="btn btn-success" onclick="return confirm('Accept this counter offer? This will send the seller to payment.')">
-                                            <i class="fas fa-check"></i> Accept Counter Offer
-                                        </button>
-                                    </form>
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
-                                        <input type="hidden" name="action" value="reject_counter">
-                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Reject this counter offer?')">
-                                            <i class="fas fa-times"></i> Reject Counter Offer
-                                        </button>
-                                    </form>
-                                <?php elseif ($neg['status'] == 'agreement_accepted'): ?>
-                                    <span class="badge" style="background: #d1fae5; color: #059669; padding: 8px 16px;">
-                                        <i class="fas fa-clock"></i> Waiting for Seller Payment
-                                    </span>
-                                <?php elseif ($neg['status'] == 'published'): ?>
-                                    <span class="badge" style="background: #d1fae5; color: #059669; padding: 8px 16px;">
-                                        <i class="fas fa-check-circle"></i> Listing Published
-                                    </span>
+                                    <button onclick="openResendModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-success">
+                                        <i class="fas fa-paper-plane"></i> Resend Proposal
+                                    </button>
+                                    
+                                <?php elseif ($neg['status'] == 'rejected'): ?>
+                                    <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
+                                        <i class="fas fa-edit"></i> Revise & Resend
+                                    </button>
                                 <?php endif; ?>
                                 
-                                <!-- FIXED: View Listing - Opens in new tab with full URL -->
+                                <!-- View Listing - Direct link without redirect issues -->
                                 <a href="/broker_system/user/product.php?id=<?php echo $neg['listing_id']; ?>" target="_blank" class="btn btn-outline">
                                     <i class="fas fa-eye"></i> View Listing
                                 </a>
                                 
-                                <!-- FIXED: Message Seller - Opens chat in new tab with full URL -->
+                                <!-- Message Seller - Direct chat link -->
                                 <a href="/broker_system/user/chat.php?user=<?php echo $neg['seller_id']; ?>" target="_blank" class="btn btn-outline">
                                     <i class="fas fa-comment"></i> Message Seller
                                 </a>
@@ -873,25 +795,27 @@ $conn->close();
         </div>
     </div>
 
-    <!-- Propose Modal -->
+    <!-- Send Proposal Modal -->
     <div id="proposeModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-percent"></i> Propose Commission & Deposit</h3>
+                <h3><i class="fas fa-percent"></i> Send Commission Proposal</h3>
                 <span class="close-modal" onclick="closeProposeModal()">&times;</span>
             </div>
             <form method="POST">
                 <input type="hidden" name="negotiation_id" id="propose_negotiation_id">
-                <input type="hidden" name="action" value="propose_terms">
+                <input type="hidden" name="action" value="send_proposal">
                 
                 <div class="form-row">
                     <div class="form-group">
                         <label>Commission (%) <span class="required-star">*</span></label>
                         <input type="number" name="commission_percent" id="propose_commission" step="0.5" min="1" max="20" required>
+                        <div class="info-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">Recommended: 3-7% based on listing value</div>
                     </div>
                     <div class="form-group">
                         <label>Deposit Amount (ETB) <span class="required-star">*</span></label>
                         <input type="number" name="deposit_amount" id="propose_deposit" step="100" min="0" required>
+                        <div class="info-text" style="font-size: 11px; color: #64748b; margin-top: 4px;">Recommended: 25% of listing price (max 50,000 ETB)</div>
                     </div>
                 </div>
                 
@@ -936,7 +860,7 @@ $conn->close();
                 </div>
                 
                 <div class="modal-buttons">
-                    <button type="submit" class="btn btn-primary">Update Proposal</button>
+                    <button type="submit" class="btn btn-primary">Update & Resend</button>
                     <button type="button" onclick="closeUpdateModal()" class="btn btn-outline">Cancel</button>
                 </div>
             </form>
