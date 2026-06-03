@@ -27,3 +27,12 @@
 2026-06-02 23:06:17 - PIN provided: YES
 2026-06-02 23:06:17 - User ID from session: 5
 2026-06-02 23:06:17 - Payment confirmed successfully. Checking if product needs to be marked as reserved...
+2026-06-03 10:05:16 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-03 10:05:16 - Payment code: 26044
+2026-06-03 10:05:16 - PIN provided: NO
+2026-06-03 10:05:16 - User ID from session: 5
+2026-06-03 10:05:22 - ========== CONFIRM PAYMENT CALLED ==========
+2026-06-03 10:05:22 - Payment code: 26044
+2026-06-03 10:05:22 - PIN provided: YES
+2026-06-03 10:05:22 - User ID from session: 5
+2026-06-03 10:05:22 - Payment confirmed successfully. Checking if product needs to be marked as reserved...

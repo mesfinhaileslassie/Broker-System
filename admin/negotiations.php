@@ -1,5 +1,6 @@
 <?php
-// admin/negotiations.php - Complete Negotiations Management System with Approve Button
+// admin/negotiations.php - Complete Negotiations Management System
+// Jobs only require commission, no deposit
 
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
@@ -28,11 +29,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'send_proposal') {
         $commission = floatval($_POST['commission_percent'] ?? 0);
         $deposit = floatval($_POST['deposit_amount'] ?? 0);
+        $is_job = intval($_POST['is_job'] ?? 0);
         $admin_notes = $conn->real_escape_string($_POST['admin_notes'] ?? '');
         
-        if ($commission <= 0 || $deposit <= 0) {
-            $error = "Commission and deposit amounts are required";
+        if ($commission <= 0) {
+            $error = "Commission percentage is required";
+        } elseif (!$is_job && $deposit <= 0) {
+            $error = "Deposit amount is required for product/rental listings";
         } else {
+            // For jobs, set deposit to 0
+            $deposit = $is_job ? 0 : $deposit;
+            
             $conn->query("
                 UPDATE listing_negotiations 
                 SET proposed_commission = $commission,
@@ -52,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->query("
                 INSERT INTO notifications (user_id, title, message, link, created_at) 
                 VALUES ({$neg['seller_id']}, '📋 New Commission Proposal', 
-                'A new proposal has been sent for your listing \"{$listing['title']}\". Proposed commission: {$commission}% and deposit: " . formatMoney($deposit) . ". Please login to review.', 
+                'A new proposal has been sent for your listing \"{$listing['title']}\". Proposed commission: {$commission}%." . ($listing['type'] != 'job' ? " Deposit: " . formatMoney($deposit) : "") . " Please login to review.', 
                 '/broker_system/user/negotiations.php', NOW())
             ");
             
@@ -62,11 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update_proposal') {
         $commission = floatval($_POST['commission_percent'] ?? 0);
         $deposit = floatval($_POST['deposit_amount'] ?? 0);
+        $is_job = intval($_POST['is_job'] ?? 0);
         $admin_notes = $conn->real_escape_string($_POST['admin_notes'] ?? '');
         
-        if ($commission <= 0 || $deposit <= 0) {
-            $error = "Commission and deposit amounts are required";
+        if ($commission <= 0) {
+            $error = "Commission percentage is required";
+        } elseif (!$is_job && $deposit <= 0) {
+            $error = "Deposit amount is required for product/rental listings";
         } else {
+            $deposit = $is_job ? 0 : $deposit;
+            
             $conn->query("
                 UPDATE listing_negotiations 
                 SET proposed_commission = $commission,
@@ -83,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->query("
                 INSERT INTO notifications (user_id, title, message, link, created_at) 
                 VALUES ({$neg['seller_id']}, '📋 Updated Proposal', 
-                'The commission proposal for \"{$listing['title']}\" has been updated to {$commission}% commission and " . formatMoney($deposit) . " deposit. Please review.', 
+                'The commission proposal for \"{$listing['title']}\" has been updated to {$commission}% commission." . ($listing['type'] != 'job' ? " Deposit: " . formatMoney($deposit) : "") . " Please review.', 
                 '/broker_system/user/negotiations.php', NOW())
             ");
             
@@ -91,7 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
     } elseif ($action === 'approve_listing') {
-        // NEW: Admin approves after seller accepts
         $conn->query("
             UPDATE listing_negotiations 
             SET status = 'approved',
@@ -103,7 +114,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $neg = $conn->query("SELECT seller_id, listing_id FROM listing_negotiations WHERE id = $negotiation_id")->fetch_assoc();
         $listing = $conn->query("SELECT title FROM listings WHERE id = {$neg['listing_id']}")->fetch_assoc();
         
-        // Update listing to active
         $conn->query("
             UPDATE listings 
             SET status = 'active',
@@ -112,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             WHERE id = {$neg['listing_id']}
         ");
         
-        // Notify seller
         $conn->query("
             INSERT INTO notifications (user_id, title, message, link, created_at) 
             VALUES ({$neg['seller_id']}, '✅ Listing Approved', 
@@ -189,7 +198,6 @@ $conn->close();
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #f5f7fb; }
 
-        /* Sidebar */
         .sidebar {
             position: fixed;
             left: 0;
@@ -227,7 +235,6 @@ $conn->close();
 
         .mobile-menu-toggle { display: none; position: fixed; top: 20px; left: 20px; z-index: 1060; background: #667eea; color: white; width: 45px; height: 45px; border-radius: 12px; border: none; cursor: pointer; }
 
-        /* Main Content */
         .main-content { margin-left: 280px; transition: all 0.3s ease; min-height: 100vh; }
         .main-content.expanded { margin-left: 88px; }
 
@@ -241,7 +248,6 @@ $conn->close();
 
         .container { padding: 28px; }
 
-        /* Stats Cards */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
@@ -258,7 +264,6 @@ $conn->close();
         .stat-value { font-size: 1.5rem; font-weight: 800; color: #0f172a; }
         .stat-label { font-size: 0.7rem; color: #64748b; margin-top: 4px; }
 
-        /* Welcome Banner */
         .welcome-banner {
             background: linear-gradient(135deg, #667eea, #764ba2);
             border-radius: 28px;
@@ -287,7 +292,6 @@ $conn->close();
         .welcome-banner h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
         .welcome-banner p { opacity: 0.9; }
 
-        /* Filters Bar */
         .filters-bar {
             background: white;
             border-radius: 20px;
@@ -328,13 +332,11 @@ $conn->close();
         }
         .filter-tab:hover, .filter-tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-color: transparent; }
 
-        /* Alert Messages */
         .alert { padding: 1rem 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 12px; animation: slideIn 0.3s ease; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .alert-success { background: #d1fae5; color: #059669; border-left: 4px solid #059669; }
         .alert-error { background: #fee2e2; color: #dc2626; border-left: 4px solid #dc2626; }
 
-        /* Negotiation Cards */
         .negotiations-list { display: flex; flex-direction: column; gap: 1.5rem; }
         .negotiation-card {
             background: white;
@@ -442,12 +444,9 @@ $conn->close();
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.3); }
         .btn-success { background: #10b981; color: white; }
         .btn-success:hover { transform: translateY(-2px); }
-        .btn-danger { background: #ef4444; color: white; }
-        .btn-danger:hover { transform: translateY(-2px); }
         .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
         .btn-outline:hover { border-color: #667eea; color: #667eea; transform: translateY(-2px); }
 
-        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -495,8 +494,9 @@ $conn->close();
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         .modal-buttons { display: flex; gap: 12px; margin-top: 24px; }
         .modal-buttons button { flex: 1; padding: 12px; border-radius: 40px; font-weight: 600; cursor: pointer; border: none; transition: all 0.3s; }
+        .required-star { color: #ef4444; margin-left: 4px; }
+        .info-text { font-size: 11px; color: #64748b; margin-top: 4px; }
 
-        /* Empty State */
         .empty-state {
             text-align: center;
             padding: 60px;
@@ -527,6 +527,7 @@ $conn->close();
             .search-box { max-width: 100%; }
             .filter-tabs { justify-content: center; }
             .action-buttons { flex-direction: column; }
+            .form-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -536,7 +537,6 @@ $conn->close();
         <i class="fas fa-bars"></i>
     </button>
 
-    <!-- Sidebar -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -592,7 +592,6 @@ $conn->close();
         </div>
     </div>
 
-    <!-- Main Content -->
     <div class="main-content" id="mainContent">
         <div class="top-bar">
             <h1 class="page-title"><i class="fas fa-handshake"></i> Negotiations Management</h1>
@@ -609,7 +608,6 @@ $conn->close();
 
         <div class="container">
             
-            <!-- Welcome Banner -->
             <div class="welcome-banner">
                 <div class="welcome-content">
                     <h1>Commission Negotiations</h1>
@@ -629,7 +627,6 @@ $conn->close();
                 </div>
             <?php endif; ?>
 
-            <!-- Stats Cards -->
             <div class="stats-grid">
                 <div class="stat-card"><div class="stat-value"><?php echo $stats['pending']; ?></div><div class="stat-label">Pending</div></div>
                 <div class="stat-card"><div class="stat-value"><?php echo $stats['proposal_sent']; ?></div><div class="stat-label">Proposal Sent</div></div>
@@ -639,7 +636,6 @@ $conn->close();
                 <div class="stat-card"><div class="stat-value"><?php echo $stats['total']; ?></div><div class="stat-label">Total</div></div>
             </div>
 
-            <!-- Filters -->
             <div class="filters-bar">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
@@ -658,7 +654,6 @@ $conn->close();
                 </div>
             </div>
 
-            <!-- Negotiations List -->
             <?php if ($negotiations && $negotiations->num_rows > 0): ?>
                 <div class="negotiations-list">
                     <?php while($neg = $negotiations->fetch_assoc()): 
@@ -699,6 +694,7 @@ $conn->close();
                         
                         $type_icon = '';
                         $type_label = '';
+                        $is_job = false;
                         if ($neg['type'] == 'rental') {
                             $type_icon = '🏠';
                             $type_label = 'Rental';
@@ -708,6 +704,7 @@ $conn->close();
                         } else {
                             $type_icon = '💼';
                             $type_label = 'Job';
+                            $is_job = true;
                         }
                     ?>
                         <div class="negotiation-card">
@@ -739,10 +736,12 @@ $conn->close();
                                         <span class="offer-label">Proposed Commission</span>
                                         <span class="offer-value proposed"><?php echo $neg['proposed_commission'] ? $neg['proposed_commission'] . '%' : 'Not set'; ?></span>
                                     </div>
+                                    <?php if (!$is_job): ?>
                                     <div class="offer-item">
                                         <span class="offer-label">Proposed Deposit</span>
                                         <span class="offer-value proposed"><?php echo $neg['proposed_deposit'] ? formatMoney($neg['proposed_deposit']) : 'Not set'; ?></span>
                                     </div>
+                                    <?php endif; ?>
                                 </div>
                                 
                                 <?php if ($neg['admin_notes']): ?>
@@ -754,12 +753,12 @@ $conn->close();
                             
                             <div class="action-buttons">
                                 <?php if ($neg['status'] == 'under_review'): ?>
-                                    <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission'] ?: 5; ?>, <?php echo $neg['proposed_deposit'] ?: ($neg['price'] * 0.25); ?>)" class="btn btn-primary">
+                                    <button onclick="openProposeModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission'] ?: 5; ?>, <?php echo $neg['proposed_deposit'] ?: ($neg['price'] * 0.25); ?>, <?php echo $is_job ? 'true' : 'false'; ?>)" class="btn btn-primary">
                                         <i class="fas fa-percent"></i> Send Proposal
                                     </button>
                                     
                                 <?php elseif ($neg['status'] == 'proposal_sent'): ?>
-                                    <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
+                                    <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>, <?php echo $is_job ? 'true' : 'false'; ?>)" class="btn btn-primary">
                                         <i class="fas fa-edit"></i> Update Proposal
                                     </button>
                                     <span class="badge" style="background: #dbeafe; color: #1e40af; padding: 8px 16px;">
@@ -767,7 +766,6 @@ $conn->close();
                                     </span>
                                     
                                 <?php elseif ($neg['status'] == 'accepted'): ?>
-                                    <!-- APPROVE BUTTON - Seller has accepted the proposal -->
                                     <form method="POST" style="display: inline;" onsubmit="return confirm('Approve this listing? The seller will be notified and can publish.')">
                                         <input type="hidden" name="negotiation_id" value="<?php echo $neg['id']; ?>">
                                         <input type="hidden" name="action" value="approve_listing">
@@ -782,7 +780,7 @@ $conn->close();
                                     </span>
                                     
                                 <?php elseif ($neg['status'] == 'rejected'): ?>
-                                    <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>)" class="btn btn-primary">
+                                    <button onclick="openUpdateModal(<?php echo $neg['id']; ?>, <?php echo $neg['proposed_commission']; ?>, <?php echo $neg['proposed_deposit']; ?>, <?php echo $is_job ? 'true' : 'false'; ?>)" class="btn btn-primary">
                                         <i class="fas fa-edit"></i> Revise & Resend
                                     </button>
                                 <?php endif; ?>
@@ -818,15 +816,18 @@ $conn->close();
             <form method="POST">
                 <input type="hidden" name="negotiation_id" id="propose_negotiation_id">
                 <input type="hidden" name="action" value="send_proposal">
+                <input type="hidden" name="is_job" id="propose_is_job" value="0">
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Commission (%) <span style="color: red;">*</span></label>
+                        <label>Commission (%) <span class="required-star">*</span></label>
                         <input type="number" name="commission_percent" id="propose_commission" step="0.5" min="1" max="20" required>
+                        <div class="info-text">Percentage of the listing price</div>
                     </div>
-                    <div class="form-group">
-                        <label>Deposit Amount (ETB) <span style="color: red;">*</span></label>
-                        <input type="number" name="deposit_amount" id="propose_deposit" step="100" min="0" required>
+                    <div class="form-group" id="depositFieldGroup">
+                        <label>Deposit Amount (ETB) <span class="required-star">*</span></label>
+                        <input type="number" name="deposit_amount" id="propose_deposit" step="100" min="0">
+                        <div class="info-text">Required for product/rental listings only</div>
                     </div>
                 </div>
                 
@@ -853,15 +854,16 @@ $conn->close();
             <form method="POST">
                 <input type="hidden" name="negotiation_id" id="update_negotiation_id">
                 <input type="hidden" name="action" value="update_proposal">
+                <input type="hidden" name="is_job" id="update_is_job" value="0">
                 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Commission (%) <span style="color: red;">*</span></label>
+                        <label>Commission (%) <span class="required-star">*</span></label>
                         <input type="number" name="commission_percent" id="update_commission" step="0.5" min="1" max="20" required>
                     </div>
-                    <div class="form-group">
-                        <label>Deposit Amount (ETB) <span style="color: red;">*</span></label>
-                        <input type="number" name="deposit_amount" id="update_deposit" step="100" min="0" required>
+                    <div class="form-group" id="updateDepositFieldGroup">
+                        <label>Deposit Amount (ETB) <span class="required-star">*</span></label>
+                        <input type="number" name="deposit_amount" id="update_deposit" step="100" min="0">
                     </div>
                 </div>
                 
@@ -879,7 +881,6 @@ $conn->close();
     </div>
 
     <script>
-        // Sidebar functionality
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const collapseBtn = document.getElementById('collapseBtn');
@@ -920,23 +921,46 @@ $conn->close();
             }
         });
 
-        // Modal functions
-        function openProposeModal(id, commission, deposit) {
+        function openProposeModal(id, commission, deposit, isJob) {
             document.getElementById('propose_negotiation_id').value = id;
             document.getElementById('propose_commission').value = commission;
             document.getElementById('propose_deposit').value = Math.round(deposit);
+            document.getElementById('propose_is_job').value = isJob ? 1 : 0;
+            
+            const depositGroup = document.getElementById('depositFieldGroup');
+            if (isJob) {
+                depositGroup.style.display = 'none';
+                document.getElementById('propose_deposit').value = 0;
+                document.getElementById('propose_deposit').required = false;
+            } else {
+                depositGroup.style.display = 'block';
+                document.getElementById('propose_deposit').required = true;
+            }
+            
             document.getElementById('proposeModal').style.display = 'flex';
+        }
+
+        function openUpdateModal(id, commission, deposit, isJob) {
+            document.getElementById('update_negotiation_id').value = id;
+            document.getElementById('update_commission').value = commission;
+            document.getElementById('update_deposit').value = deposit;
+            document.getElementById('update_is_job').value = isJob ? 1 : 0;
+            
+            const depositGroup = document.getElementById('updateDepositFieldGroup');
+            if (isJob) {
+                depositGroup.style.display = 'none';
+                document.getElementById('update_deposit').value = 0;
+                document.getElementById('update_deposit').required = false;
+            } else {
+                depositGroup.style.display = 'block';
+                document.getElementById('update_deposit').required = true;
+            }
+            
+            document.getElementById('updateModal').style.display = 'flex';
         }
 
         function closeProposeModal() {
             document.getElementById('proposeModal').style.display = 'none';
-        }
-
-        function openUpdateModal(id, commission, deposit) {
-            document.getElementById('update_negotiation_id').value = id;
-            document.getElementById('update_commission').value = commission;
-            document.getElementById('update_deposit').value = deposit;
-            document.getElementById('updateModal').style.display = 'flex';
         }
 
         function closeUpdateModal() {
