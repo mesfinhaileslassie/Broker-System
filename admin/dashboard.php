@@ -1,9 +1,13 @@
 <?php
 // admin/dashboard.php - Completely Redesigned Modern Admin Dashboard
 
-require_once '../includes/auth.php';
+// Start session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-if (!isLoggedIn() || $_SESSION['user_role'] != 'admin') {
+// IMPORTANT FIX: Direct admin session check - NOT using isLoggedIn()
+if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header('Location: /broker_system/auth/login.php');
     exit;
 }
@@ -12,23 +16,23 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 
 $conn = getDbConnection();
-$admin_name = $_SESSION['user_name'];
+$admin_name = $_SESSION['admin_name'] ?? 'Admin';
 
 // Get statistics
 $stats = [
-    'total_users' => $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'user'")->fetch_assoc()['count'],
-    'total_companies' => $conn->query("SELECT COUNT(*) as count FROM companies")->fetch_assoc()['count'],
-    'total_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions")->fetch_assoc()['count'],
-    'completed_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions WHERE status = 'completed'")->fetch_assoc()['count'],
-    'pending_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions WHERE status NOT IN ('completed', 'cancelled')")->fetch_assoc()['count'],
+    'total_users' => $conn->query("SELECT COUNT(*) as count FROM users WHERE role = 'user'")->fetch_assoc()['count'] ?? 0,
+    'total_companies' => $conn->query("SELECT COUNT(*) as count FROM companies")->fetch_assoc()['count'] ?? 0,
+    'total_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions")->fetch_assoc()['count'] ?? 0,
+    'completed_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions WHERE status = 'completed'")->fetch_assoc()['count'] ?? 0,
+    'pending_transactions' => $conn->query("SELECT COUNT(*) as count FROM transactions WHERE status NOT IN ('completed', 'cancelled')")->fetch_assoc()['count'] ?? 0,
     'total_revenue' => $conn->query("SELECT SUM(commission_amount) as total FROM transactions WHERE status = 'completed'")->fetch_assoc()['total'] ?? 0,
-    'pending_approvals' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE approval_status = 'pending'")->fetch_assoc()['count'],
-    'active_disputes' => $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status IN ('open', 'under_review')")->fetch_assoc()['count'],
+    'pending_approvals' => $conn->query("SELECT COUNT(*) as count FROM listings WHERE approval_status = 'pending'")->fetch_assoc()['count'] ?? 0,
+    'active_disputes' => $conn->query("SELECT COUNT(*) as count FROM disputes WHERE status IN ('open', 'under_review')")->fetch_assoc()['count'] ?? 0,
     'escrow_held' => $conn->query("SELECT SUM(escrow_held) as total FROM transactions WHERE status NOT IN ('completed', 'cancelled')")->fetch_assoc()['total'] ?? 0,
-    'total_negotiations' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations")->fetch_assoc()['count'],
-    'pending_negotiations' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status IN ('under_review', 'commission_proposed', 'counter_offer_sent')")->fetch_assoc()['count'],
+    'total_negotiations' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations")->fetch_assoc()['count'] ?? 0,
+    'pending_negotiations' => $conn->query("SELECT COUNT(*) as count FROM listing_negotiations WHERE status IN ('under_review', 'commission_proposed', 'counter_offer_sent')")->fetch_assoc()['count'] ?? 0,
     'total_withdrawals' => $conn->query("SELECT SUM(amount) as total FROM withdrawal_requests WHERE status = 'completed'")->fetch_assoc()['total'] ?? 0,
-    'new_users_today' => $conn->query("SELECT COUNT(*) as count FROM users WHERE DATE(created_at) = CURDATE()")->fetch_assoc()['count'],
+    'new_users_today' => $conn->query("SELECT COUNT(*) as count FROM users WHERE DATE(created_at) = CURDATE()")->fetch_assoc()['count'] ?? 0,
 ];
 
 // Get recent transactions
@@ -43,7 +47,7 @@ $recentTransactions = $conn->query("
     LIMIT 8
 ");
 
-// Get negotiations for table (UNIFIED TABLE VIEW)
+// Get negotiations for table
 $negotiations = $conn->query("
     SELECT ln.*, l.title, l.type, l.price, l.id as listing_id,
            u.full_name as seller_name, u.email as seller_email, u.id as seller_id,
@@ -87,9 +91,7 @@ $conn->close();
             overflow-x: hidden;
         }
 
-        /* ============================================
-           SIDEBAR STYLES - Premium Design
-        ============================================ */
+        /* Sidebar Styles */
         .sidebar {
             position: fixed;
             left: 0;
@@ -105,13 +107,10 @@ $conn->close();
             box-shadow: 4px 0 20px rgba(0,0,0,0.08);
         }
 
-        /* Custom Scrollbar */
         .sidebar::-webkit-scrollbar { width: 4px; }
         .sidebar::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 10px; }
         .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
-        .sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
-        /* Collapsed Sidebar */
         .sidebar.collapsed { width: 88px; }
         .sidebar.collapsed .logo-text,
         .sidebar.collapsed .menu-label,
@@ -119,19 +118,14 @@ $conn->close();
         .sidebar.collapsed .section-header { display: none; }
         .sidebar.collapsed .menu-item { justify-content: center; padding: 12px; }
         .sidebar.collapsed .menu-item i { margin-right: 0; font-size: 1.4rem; }
-        .sidebar.collapsed .logo { justify-content: center; }
         
-        /* Sidebar Header */
         .sidebar-header {
             padding: 24px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             border-bottom: 1px solid rgba(255,255,255,0.08);
-            position: sticky;
-            top: 0;
             background: #0f172a;
-            z-index: 10;
         }
 
         .logo {
@@ -155,7 +149,6 @@ $conn->close();
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            letter-spacing: -0.3px;
         }
 
         .collapse-btn {
@@ -167,18 +160,13 @@ $conn->close();
             border-radius: 10px;
             cursor: pointer;
             transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .collapse-btn:hover {
             background: rgba(255,255,255,0.18);
             color: white;
-            transform: scale(1.05);
         }
 
-        /* Navigation Menu */
         .nav-menu {
             list-style: none;
             padding: 20px 16px;
@@ -193,7 +181,6 @@ $conn->close();
             padding: 12px 16px;
             border-radius: 14px;
             color: #94a3b8;
-            cursor: pointer;
             transition: all 0.3s;
             text-decoration: none;
             gap: 12px;
@@ -222,10 +209,6 @@ $conn->close();
             box-shadow: 0 4px 12px rgba(79,70,229,0.3);
         }
 
-        .menu-item.active i {
-            color: white;
-        }
-
         .badge-count {
             background: #ef4444;
             color: white;
@@ -234,8 +217,6 @@ $conn->close();
             padding: 2px 6px;
             border-radius: 20px;
             margin-left: auto;
-            min-width: 20px;
-            text-align: center;
         }
 
         .section-header {
@@ -248,12 +229,9 @@ $conn->close();
             font-weight: 700;
         }
 
-        /* Sidebar Footer */
         .sidebar-footer {
             position: sticky;
             bottom: 0;
-            left: 0;
-            right: 0;
             padding: 20px 16px;
             border-top: 1px solid rgba(255,255,255,0.08);
             background: #0f172a;
@@ -268,7 +246,6 @@ $conn->close();
             border-radius: 14px;
             text-decoration: none;
             color: #e2e8f0;
-            transition: all 0.3s;
         }
 
         .profile-item:hover {
@@ -285,7 +262,6 @@ $conn->close();
             justify-content: center;
             font-weight: 700;
             font-size: 1.1rem;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
 
         .profile-info {
@@ -309,7 +285,6 @@ $conn->close();
             text-overflow: ellipsis;
         }
 
-        /* Mobile Menu Button */
         .mobile-menu-toggle {
             display: none;
             position: fixed;
@@ -326,9 +301,7 @@ $conn->close();
             box-shadow: 0 4px 12px rgba(79,70,229,0.3);
         }
 
-        /* ============================================
-           MAIN CONTENT STYLES
-        ============================================ */
+        /* Main Content */
         .main-content {
             margin-left: 280px;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -339,7 +312,6 @@ $conn->close();
             margin-left: 88px;
         }
 
-        /* Top Bar */
         .top-bar {
             background: white;
             padding: 1rem 2rem;
@@ -349,7 +321,7 @@ $conn->close();
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.02);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
 
         .page-title {
@@ -359,7 +331,6 @@ $conn->close();
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            letter-spacing: -0.02em;
         }
 
         .admin-info {
@@ -404,9 +375,7 @@ $conn->close();
             padding: 28px;
         }
 
-        /* ============================================
-           STATS CARDS
-        ============================================ */
+        /* Stats Cards */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -419,8 +388,7 @@ $conn->close();
             border-radius: 24px;
             padding: 1.5rem;
             transition: all 0.3s;
-            border: 1px solid rgba(0,0,0,0.04);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            border: 1px solid #e2e8f0;
             position: relative;
             overflow: hidden;
         }
@@ -469,16 +437,14 @@ $conn->close();
             font-weight: 500;
         }
 
-        /* ============================================
-           SECTION CARDS
-        ============================================ */
+        /* Cards */
         .card {
             background: white;
             border-radius: 24px;
             margin-bottom: 2rem;
             overflow: hidden;
             box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-            border: 1px solid rgba(0,0,0,0.04);
+            border: 1px solid #e2e8f0;
         }
 
         .card-header {
@@ -509,16 +475,13 @@ $conn->close();
             color: #4f46e5;
             text-decoration: none;
             font-weight: 600;
-            transition: all 0.3s;
         }
 
         .card-header a:hover {
             text-decoration: underline;
         }
 
-        /* ============================================
-           UNIFIED NEGOTIATION TABLE - REDESIGNED
-        ============================================ */
+        /* Filters */
         .filters-bar {
             padding: 1rem 1.5rem;
             background: #f8fafc;
@@ -599,7 +562,7 @@ $conn->close();
             color: #64748b;
         }
 
-        /* Premium Table Styles */
+        /* Table Styles */
         .table-wrapper {
             overflow-x: auto;
             padding: 0 1.5rem 1.5rem 1.5rem;
@@ -626,15 +589,11 @@ $conn->close();
             vertical-align: middle;
         }
 
-        .data-table tr {
-            transition: all 0.2s;
-        }
-
         .data-table tr:hover {
             background: #f8fafc;
         }
 
-        /* Seller Info Cell */
+        /* Seller Info */
         .seller-info {
             display: flex;
             align-items: center;
@@ -652,7 +611,6 @@ $conn->close();
             font-weight: 600;
             font-size: 0.8rem;
             color: white;
-            flex-shrink: 0;
         }
 
         .seller-details {
@@ -710,16 +668,12 @@ $conn->close();
 
         .btn-primary { background: #4f46e5; color: white; }
         .btn-primary:hover { background: #4338ca; transform: translateY(-1px); }
-
         .btn-success { background: #10b981; color: white; }
         .btn-success:hover { background: #059669; transform: translateY(-1px); }
-
         .btn-warning { background: #f59e0b; color: white; }
         .btn-warning:hover { background: #d97706; transform: translateY(-1px); }
-
         .btn-danger { background: #ef4444; color: white; }
         .btn-danger:hover { background: #dc2626; transform: translateY(-1px); }
-
         .btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #64748b; }
         .btn-outline:hover { border-color: #4f46e5; color: #4f46e5; }
 
@@ -754,7 +708,7 @@ $conn->close();
             gap: 1.5rem;
         }
 
-        /* Recent Users List */
+        /* Users List */
         .users-list {
             padding: 0 1.5rem 1.5rem;
         }
@@ -789,7 +743,7 @@ $conn->close();
             font-weight: 600;
         }
 
-        /* Chart Container */
+        /* Chart */
         .chart-container {
             padding: 1.5rem;
         }
@@ -852,7 +806,7 @@ $conn->close();
             .sidebar .menu-item { justify-content: center; padding: 12px; }
             .sidebar .menu-item i { margin-right: 0; font-size: 1.4rem; }
             .main-content { margin-left: 88px; }
-            .two-columns { grid-template-columns: 1fr; gap: 1rem; }
+            .two-columns { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 768px) {
@@ -887,14 +841,12 @@ $conn->close();
             .top-bar {
                 padding: 1rem;
                 flex-wrap: wrap;
-                gap: 1rem;
             }
             .container {
                 padding: 1rem;
             }
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
             }
             .filters-bar {
                 flex-direction: column;
@@ -905,18 +857,6 @@ $conn->close();
             }
             .filter-tabs {
                 justify-content: center;
-            }
-            .stats-mini {
-                justify-content: center;
-            }
-            .action-buttons {
-                flex-wrap: wrap;
-            }
-            .table-wrapper {
-                overflow-x: auto;
-            }
-            .data-table {
-                min-width: 800px;
             }
         }
 
@@ -935,7 +875,6 @@ $conn->close();
 </head>
 <body>
 
-    <!-- Mobile Menu Toggle -->
     <button class="mobile-menu-toggle" id="mobileMenuToggle">
         <i class="fas fa-bars"></i>
     </button>
@@ -1094,14 +1033,13 @@ $conn->close();
                 </div>
             </div>
 
-            <!-- Commission Negotiations Table - REDESIGNED -->
+            <!-- Commission Negotiations Table -->
             <div class="card">
                 <div class="card-header">
                     <h3><i class="fas fa-handshake"></i> Commission Negotiations</h3>
                     <a href="negotiations.php">View All Negotiations →</a>
                 </div>
                 
-                <!-- Filters Bar -->
                 <div class="filters-bar">
                     <div class="search-box">
                         <i class="fas fa-search"></i>
@@ -1248,8 +1186,8 @@ $conn->close();
                         <h3><i class="fas fa-clock"></i> Recent Transactions</h3>
                         <a href="transactions.php">View All →</a>
                     </div>
-                    <div class="table-wrapper" style="padding: 0 1.5rem 1.5rem 1.5rem;">
-                        <?php if ($recentTransactions->num_rows > 0): ?>
+                    <div class="table-wrapper">
+                        <?php if ($recentTransactions && $recentTransactions->num_rows > 0): ?>
                             <table class="data-table">
                                 <thead>
                                     <tr><th>ID</th><th>Item</th><th>Amount</th><th>Status</th><th>Date</th></tr>
@@ -1279,7 +1217,7 @@ $conn->close();
                         <a href="users.php">Manage Users →</a>
                     </div>
                     <div class="users-list">
-                        <?php if ($recentUsers->num_rows > 0): ?>
+                        <?php if ($recentUsers && $recentUsers->num_rows > 0): ?>
                             <?php while($user = $recentUsers->fetch_assoc()): ?>
                             <div class="user-item">
                                 <div class="user-info">
@@ -1316,7 +1254,7 @@ $conn->close();
     </div>
 
     <script>
-        // Sidebar collapse functionality
+        // Sidebar functionality
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         const collapseBtn = document.getElementById('collapseBtn');
@@ -1338,7 +1276,6 @@ $conn->close();
             });
         }
 
-        // Load saved sidebar state
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             sidebar.classList.add('collapsed');
             mainContent.classList.add('expanded');
@@ -1349,14 +1286,12 @@ $conn->close();
             }
         }
 
-        // Mobile sidebar toggle
         if (mobileMenuToggle) {
             mobileMenuToggle.addEventListener('click', () => {
                 sidebar.classList.toggle('mobile-open');
             });
         }
 
-        // Close mobile sidebar when clicking outside
         document.addEventListener('click', (e) => {
             if (window.innerWidth <= 768) {
                 if (!sidebar.contains(e.target) && !mobileMenuToggle.contains(e.target)) {
@@ -1365,7 +1300,7 @@ $conn->close();
             }
         });
 
-        // Filter negotiations table
+        // Filter negotiations
         const filterTabs = document.querySelectorAll('.filter-tab');
         const tableRows = document.querySelectorAll('#negotiationsTable tbody tr');
         const searchInput = document.getElementById('searchNegotiations');
@@ -1386,7 +1321,6 @@ $conn->close();
             });
         });
 
-        // Search functionality
         if (searchInput) {
             searchInput.addEventListener('keyup', () => {
                 const searchTerm = searchInput.value.toLowerCase();
@@ -1401,7 +1335,6 @@ $conn->close();
             });
         }
 
-        // Contact seller function
         function contactSeller(sellerId) {
             window.open(`../user/chat.php?user=${sellerId}`, '_blank');
         }
@@ -1428,19 +1361,11 @@ $conn->close();
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                    }
-                },
+                plugins: { legend: { position: 'top' } },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return value.toLocaleString() + ' ETB';
-                            }
-                        }
+                        ticks: { callback: function(value) { return value.toLocaleString() + ' ETB'; } }
                     }
                 }
             }
@@ -1448,7 +1373,3 @@ $conn->close();
     </script>
 </body>
 </html>
-
-<?php
-
-?>

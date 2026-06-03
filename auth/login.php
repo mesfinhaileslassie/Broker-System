@@ -1,42 +1,34 @@
 <?php
 // auth/login.php - Complete Login with Validation
 
+session_start();
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/auth.php';
 require_once '../includes/validation.php';
 
-// If already logged in, redirect based on role
-if (isLoggedIn()) {
-    if ($_SESSION['user_role'] == 'admin') {
-        header('Location: /broker_system/admin/dashboard.php');
-    } elseif ($_SESSION['user_role'] == 'company') {
-        header('Location: /broker_system/company/dashboard.php');
-    } else {
-        header('Location: /broker_system/user/dashboard.php');
-    }
-    exit;
+// Clear any existing session to prevent conflicts
+if (isset($_SESSION['user_logged_in'])) {
+    session_destroy();
+    session_start();
 }
 
 $error = '';
 $email = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitize inputs
     $email = sanitizeEmail($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $remember = isset($_POST['remember']) ? true : false;
     
     $errors = [];
     
-    // Validate email
     if (empty($email)) {
         $errors[] = "Email address is required";
     } elseif (!validateEmail($email)) {
         $errors[] = "Please enter a valid email address";
     }
     
-    // Validate password
     if (empty($password)) {
         $errors[] = "Password is required";
     }
@@ -44,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $conn = getDbConnection();
         
-        // Get user by email
         $stmt = $conn->prepare("SELECT id, full_name, email, password_hash, role, balance, is_suspended, is_verified FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
@@ -53,53 +44,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
             
-            // Check if suspended
             if ($user['is_suspended']) {
                 $errors[] = "Your account has been suspended. Please contact support.";
-            } 
-            // Check if email verified (optional - uncomment if needed)
-            // elseif (!$user['is_verified']) {
-            //     $errors[] = "Please verify your email address before logging in.";
-            // }
-            // Verify password
-            elseif (password_verify($password, $user['password_hash'])) {
-                // Login successful
-                $_SESSION['user_logged_in'] = true;
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['user_name'] = $user['full_name'];
-                $_SESSION['user_email'] = $user['email'];
-                $_SESSION['user_role'] = $user['role'];
-                $_SESSION['user_balance'] = $user['balance'];
+            } elseif (password_verify($password, $user['password_hash'])) {
                 
-                // Update last login
-                $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
+                // IMPORTANT: Clear ALL existing session variables first
+                $_SESSION = array();
                 
-                // Remember me (30 days)
-                if ($remember) {
-                    $token = bin2hex(random_bytes(32));
-                    $expires = date('Y-m-d H:i:s', strtotime('+30 days'));
-                    $conn->query("INSERT INTO user_tokens (user_id, token, expires_at) VALUES ({$user['id']}, '$token', '$expires')");
-                    setcookie('remember_token', $token, time() + (86400 * 30), '/');
-                }
-                
-                // Role-based redirect
-                if ($user['role'] == 'admin') {
+                // Check if user is ADMIN - set admin session ONLY
+                if ($user['role'] === 'admin') {
+                    $_SESSION['admin_logged_in'] = true;
+                    $_SESSION['admin_id'] = $user['id'];
+                    $_SESSION['admin_name'] = $user['full_name'];
+                    $_SESSION['admin_email'] = $user['email'];
+                    $_SESSION['admin_role'] = $user['role'];
+                    
+                    // Update last login
+                    $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
+                    $conn->close();
+                    
                     header('Location: /broker_system/admin/dashboard.php');
-                } elseif ($user['role'] == 'company') {
-                    header('Location: /broker_system/company/dashboard.php');
-                } else {
-                    $redirect = $_SESSION['redirect_after_login'] ?? '/broker_system/user/dashboard.php';
-                    unset($_SESSION['redirect_after_login']);
-                    header("Location: $redirect");
+                    exit;
+                } 
+                // Regular user or company
+                else {
+                    $_SESSION['user_logged_in'] = true;
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['user_name'] = $user['full_name'];
+                    $_SESSION['user_email'] = $user['email'];
+                    $_SESSION['user_role'] = $user['role'];
+                    $_SESSION['user_balance'] = $user['balance'];
+                    
+                    $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
+                    $conn->close();
+                    
+                    if ($user['role'] === 'company') {
+                        header('Location: /broker_system/company/dashboard.php');
+                    } else {
+                        $redirect = $_SESSION['redirect_after_login'] ?? '/broker_system/user/dashboard.php';
+                        unset($_SESSION['redirect_after_login']);
+                        header("Location: $redirect");
+                    }
+                    exit;
                 }
-                exit;
             } else {
                 $errors[] = "Invalid email or password";
             }
         } else {
             $errors[] = "No account found with this email address";
         }
-        
         $conn->close();
     }
     
@@ -537,7 +530,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
-    // Password visibility toggle
     document.getElementById('togglePassword').addEventListener('click', function() {
         const pw = document.getElementById('password');
         const show = pw.type === 'password';
@@ -546,7 +538,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         this.classList.toggle('fa-eye-slash', show);
     });
 
-    // Demo credentials accordion
     const demoToggle = document.getElementById('demoToggle');
     const demoBody = document.getElementById('demoBody');
 
