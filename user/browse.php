@@ -1,5 +1,5 @@
 <?php
-// user/browse.php - Shows ONLY active listings (jobs with commission paid, available products/rentals)
+// user/browse.php - Shows ONLY active listings (available for purchase/application)
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -41,11 +41,15 @@ $limit = 12;
 $offset = ($page - 1) * $limit;
 
 // ============================================
-// SHOW ONLY ACTIVE LISTINGS
+// CRITICAL: Only show listings that are AVAILABLE
+// For products/rentals: status = 'active' AND availability_status = 'available'
+// For jobs: status = 'active' (commission paid)
 // ============================================
+
 $where_conditions = [
     "l.status = 'active'",
-    "l.approval_status = 'approved'"
+    "l.approval_status = 'approved'",
+    "(l.availability_status = 'available' OR l.availability_status IS NULL)"
 ];
 
 $params = [];
@@ -254,7 +258,7 @@ $conn->close();
 
 <!-- Result Count -->
 <div class="result-count">
-    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> active listing(s)
+    <i class="fas fa-list"></i> Found <?php echo number_format($total); ?> available listing(s)
 </div>
 
 <!-- Listings Grid -->
@@ -299,7 +303,7 @@ $conn->close();
                         <?php if ($item['type'] == 'rental'): ?>🏡 For Rent
                         <?php elseif ($item['type'] == 'product'): ?>🚗 For Sale
                         <?php else: ?>💼 Job Opportunity<?php endif; ?>
-                        <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Active</span>
+                        <span class="availability-badge badge-available"><i class="fas fa-check-circle"></i> Available</span>
                     </span>
                     <div class="card-title"><?php echo htmlspecialchars(substr($item['title'], 0, 50)); ?></div>
                     <div class="card-price"><?php echo formatMoney($item['price']); ?>
@@ -364,7 +368,7 @@ $conn->close();
 <?php else: ?>
     <div class="empty-state">
         <i class="fas fa-search"></i>
-        <h3>No active listings found</h3>
+        <h3>No available listings found</h3>
         <p>Try adjusting your search or filter criteria, or check back later for new listings.</p>
         <a href="post_listing.php" class="btn" style="display: inline-block; margin-top: 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 12px 28px; border-radius: 40px; text-decoration: none;">
             <i class="fas fa-plus-circle"></i> Post a Listing
