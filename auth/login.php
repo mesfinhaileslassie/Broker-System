@@ -1,5 +1,5 @@
 <?php
-// auth/login.php - Complete Login with Validation
+// auth/login.php - Complete Login with Validation (FIXED)
 
 session_start();
 require_once '../config/database.php';
@@ -48,45 +48,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "Your account has been suspended. Please contact support.";
             } elseif (password_verify($password, $user['password_hash'])) {
                 
-                // IMPORTANT: Clear ALL existing session variables first
+                // ============================================
+                // CRITICAL: Set ALL session variables correctly
+                // ============================================
                 $_SESSION = array();
                 
-                // Check if user is ADMIN - set admin session ONLY
+                // Set unified user session (for all pages)
+                $_SESSION['user_logged_in'] = true;
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['full_name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role'] = $user['role'];
+                $_SESSION['user_balance'] = $user['balance'];
+                
+                // Set admin-specific session (for admin pages only)
                 if ($user['role'] === 'admin') {
                     $_SESSION['admin_logged_in'] = true;
                     $_SESSION['admin_id'] = $user['id'];
                     $_SESSION['admin_name'] = $user['full_name'];
                     $_SESSION['admin_email'] = $user['email'];
                     $_SESSION['admin_role'] = $user['role'];
-                    
-                    // Update last login
-                    $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
-                    $conn->close();
-                    
-                    header('Location: /broker_system/admin/dashboard.php');
-                    exit;
-                } 
-                // Regular user or company
-                else {
-                    $_SESSION['user_logged_in'] = true;
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['user_name'] = $user['full_name'];
-                    $_SESSION['user_email'] = $user['email'];
-                    $_SESSION['user_role'] = $user['role'];
-                    $_SESSION['user_balance'] = $user['balance'];
-                    
-                    $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
-                    $conn->close();
-                    
-                    if ($user['role'] === 'company') {
-                        header('Location: /broker_system/company/dashboard.php');
-                    } else {
-                        $redirect = $_SESSION['redirect_after_login'] ?? '/broker_system/user/dashboard.php';
-                        unset($_SESSION['redirect_after_login']);
-                        header("Location: $redirect");
-                    }
-                    exit;
                 }
+                
+                // Update last login
+                $conn->query("UPDATE users SET last_login = NOW() WHERE id = {$user['id']}");
+                $conn->close();
+                
+                // Role-based redirect
+                if ($user['role'] === 'admin') {
+                    header('Location: /broker_system/admin/dashboard.php');
+                } elseif ($user['role'] === 'company') {
+                    header('Location: /broker_system/company/dashboard.php');
+                } else {
+                    $redirect = $_SESSION['redirect_after_login'] ?? '/broker_system/user/dashboard.php';
+                    unset($_SESSION['redirect_after_login']);
+                    header("Location: $redirect");
+                }
+                exit;
             } else {
                 $errors[] = "Invalid email or password";
             }
